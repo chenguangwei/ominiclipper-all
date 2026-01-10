@@ -1,0 +1,5 @@
+{
+  "name": "OmniClipper - Web Collector",
+  "description": "A beautiful browser extension style application to collect URLs and Notes using Markdown. Supports Local Storage and Feishu/Lark Base integration.",
+  "requestFramePermissions": []
+}
