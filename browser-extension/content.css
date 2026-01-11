@@ -1,0 +1,55 @@
+/**
+ * OmniClipper Content Styles
+ */
+
+/* Hide capture button when printing */
+@media print {
+  #omniclipper-capture-btn {
+    display: none !important;
+  }
+}
+
+/* Highlight captured content */
+.omniclipper-highlight {
+  background-color: rgba(102, 126, 234, 0.2);
+  border-bottom: 2px solid #667eea;
+}
+
+/* Loading animation for capture button */
+@keyframes omniclipper-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  }
+}
+
+#omniclipper-capture-btn.capturing {
+  animation: omniclipper-pulse 1s infinite;
+}
+
+/* Tooltip for capture button */
+#omniclipper-capture-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  background: #333;
+  color: white;
+  font-size: 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  margin-bottom: 8px;
+}
+
+#omniclipper-capture-btn:hover::after {
+  opacity: 1;
+}

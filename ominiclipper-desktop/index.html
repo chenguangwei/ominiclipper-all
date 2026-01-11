@@ -14,6 +14,11 @@
           extend: {
             colors: {
               "primary": "rgb(var(--color-primary) / <alpha-value>)",
+              "surface": "rgb(var(--color-bg) / <alpha-value>)",
+              "surface-secondary": "rgb(var(--color-bg-secondary) / <alpha-value>)",
+              "surface-tertiary": "rgb(var(--color-bg-tertiary) / <alpha-value>)",
+              "content": "rgb(var(--color-text) / <alpha-value>)",
+              "content-secondary": "rgb(var(--color-text-secondary) / <alpha-value>)",
               "mac-sidebar": "rgba(255, 255, 255, 0.05)",
               "background-dark": "#1e1e1e",
               "mac-border": "rgba(255, 255, 255, 0.1)",
@@ -35,8 +40,33 @@
       }
     </script>
     <style>
-      :root {
+      /* Dark mode (default) */
+      :root, :root.dark {
         --color-primary: 43 140 238;
+        --color-bg: 30 30 30;
+        --color-bg-secondary: 26 26 26;
+        --color-bg-tertiary: 37 37 37;
+        --color-text: 226 232 240;
+        --color-text-secondary: 148 163 184;
+        --color-border: 255 255 255;
+        --border-opacity: 0.05;
+      }
+
+      /* Light mode */
+      :root.light {
+        --color-bg: 255 255 255;
+        --color-bg-secondary: 248 250 252;
+        --color-bg-tertiary: 241 245 249;
+        --color-text: 30 41 59;
+        --color-text-secondary: 100 116 139;
+        --color-border: 0 0 0;
+        --border-opacity: 0.1;
+      }
+
+      /* Light mode body styles */
+      :root.light body {
+        background-color: rgb(248 250 252);
+        color: rgb(30 41 59);
       }
       .material-symbols-outlined {
         font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;

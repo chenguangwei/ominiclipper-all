@@ -1,0 +1,101 @@
+{
+  "extensionName": "OmniClipper - 网页收集器",
+  "extensionDescription": "一款功能强大的浏览器扩展，用于收集网页内容，支持链接、文章和笔记的云同步。",
+  "commandCapturePage": "捕获当前页面",
+  "commandCaptureSelection": "捕获选中的内容",
+  "popup": {
+    "capture": {
+      "title": "捕获",
+      "history": "历史",
+      "settings": "设置",
+      "link": "链接",
+      "note": "笔记",
+      "titlePlaceholder": "输入标题...",
+      "contentPlaceholder": "输入内容或笔记...",
+      "urlPlaceholder": "输入链接...",
+      "tagsPlaceholder": "添加标签...",
+      "save": "保存",
+      "cancel": "取消",
+      "captureCurrentPage": "捕获当前页面",
+      "captureSelection": "捕获选中内容",
+      "autoFilled": "已从页面自动填充"
+    },
+    "history": {
+      "title": "历史记录",
+      "searchPlaceholder": "搜索...",
+      "filterAll": "全部",
+      "filterLinks": "链接",
+      "filterNotes": "笔记",
+      "emptyState": "暂无内容",
+      "exportCSV": "导出 CSV",
+      "exportJSON": "导出 JSON",
+      "delete": "删除",
+      "deleteSelected": "删除选中",
+      "syncStatus": {
+        "pending": "等待同步",
+        "syncing": "同步中...",
+        "synced": "已同步",
+        "error": "同步失败"
+      },
+      "copied": "已复制到剪贴板",
+      "copyError": "复制失败"
+    },
+    "settings": {
+      "title": "设置",
+      "storage": {
+        "title": "存储",
+        "local": "本地存储",
+        "feishu": "飞书 (Lark)",
+        "supabase": "Supabase"
+      },
+      "feishu": {
+        "title": "飞书配置",
+        "appId": "应用 ID",
+        "appSecret": "应用密钥",
+        "appToken": "应用 Token",
+        "tableId": "数据表 ID",
+        "validate": "验证连接",
+        "valid": "连接成功",
+        "invalid": "连接失败",
+        "help": "配置帮助"
+      },
+      "supabase": {
+        "title": "Supabase 配置",
+        "url": "项目 URL",
+        "anonKey": "Anon Key",
+        "tableName": "表名",
+        "validate": "验证连接",
+        "valid": "连接成功",
+        "invalid": "连接失败"
+      },
+      "auth": {
+        "title": "认证",
+        "email": "邮箱",
+        "password": "密码",
+        "signIn": "登录",
+        "signUp": "注册",
+        "signOut": "退出",
+        "forgotPassword": "忘记密码？"
+      },
+      "about": {
+        "title": "关于",
+        "version": "版本",
+        "documentation": "文档",
+        "reportIssue": "报告问题"
+      }
+    }
+  },
+  "notifications": {
+    "saved": "保存成功",
+    "syncFailed": "同步失败",
+    "exportSuccess": "导出成功",
+    "importSuccess": "导入成功",
+    "installed": "点击扩展图标开始捕获网页内容！"
+  },
+  "errors": {
+    "required": "此字段为必填项",
+    "invalidUrl": "链接格式无效",
+    "networkError": "网络错误",
+    "unknownError": "发生未知错误"
+  }
+}

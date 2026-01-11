@@ -1,0 +1,101 @@
+{
+  "extensionName": "OmniClipper - Web Collector",
+  "extensionDescription": "A powerful browser extension for collecting web content, supporting links, articles, and notes with cloud sync.",
+  "commandCapturePage": "Capture current page",
+  "commandCaptureSelection": "Capture selected content",
+  "popup": {
+    "capture": {
+      "title": "Capture",
+      "history": "History",
+      "settings": "Settings",
+      "link": "Link",
+      "note": "Note",
+      "titlePlaceholder": "Enter title...",
+      "contentPlaceholder": "Enter content or notes...",
+      "urlPlaceholder": "Enter URL...",
+      "tagsPlaceholder": "Add tags...",
+      "save": "Save",
+      "cancel": "Cancel",
+      "captureCurrentPage": "Capture Current Page",
+      "captureSelection": "Capture Selection",
+      "autoFilled": "Auto-filled from page"
+    },
+    "history": {
+      "title": "History",
+      "searchPlaceholder": "Search...",
+      "filterAll": "All",
+      "filterLinks": "Links",
+      "filterNotes": "Notes",
+      "emptyState": "No items yet",
+      "exportCSV": "Export CSV",
+      "exportJSON": "Export JSON",
+      "delete": "Delete",
+      "deleteSelected": "Delete Selected",
+      "syncStatus": {
+        "pending": "Pending",
+        "syncing": "Syncing...",
+        "synced": "Synced",
+        "error": "Sync Failed"
+      },
+      "copied": "Copied to clipboard",
+      "copyError": "Failed to copy"
+    },
+    "settings": {
+      "title": "Settings",
+      "storage": {
+        "title": "Storage",
+        "local": "Local Storage",
+        "feishu": "Feishu (Lark)",
+        "supabase": "Supabase"
+      },
+      "feishu": {
+        "title": "Feishu Configuration",
+        "appId": "App ID",
+        "appSecret": "App Secret",
+        "appToken": "App Token",
+        "tableId": "Table ID",
+        "validate": "Validate Connection",
+        "valid": "Connected successfully",
+        "invalid": "Connection failed",
+        "help": "Configuration Help"
+      },
+      "supabase": {
+        "title": "Supabase Configuration",
+        "url": "Project URL",
+        "anonKey": "Anon Key",
+        "tableName": "Table Name",
+        "validate": "Validate Connection",
+        "valid": "Connected successfully",
+        "invalid": "Connection failed"
+      },
+      "auth": {
+        "title": "Authentication",
+        "email": "Email",
+        "password": "Password",
+        "signIn": "Sign In",
+        "signUp": "Sign Up",
+        "signOut": "Sign Out",
+        "forgotPassword": "Forgot Password?"
+      },
+      "about": {
+        "title": "About",
+        "version": "Version",
+        "documentation": "Documentation",
+        "reportIssue": "Report Issue"
+      }
+    }
+  },
+  "notifications": {
+    "saved": "Saved successfully",
+    "syncFailed": "Sync failed",
+    "exportSuccess": "Export successful",
+    "importSuccess": "Import successful",
+    "installed": "Click the extension icon to start capturing web content!"
+  },
+  "errors": {
+    "required": "This field is required",
+    "invalidUrl": "Invalid URL",
+    "networkError": "Network error",
+    "unknownError": "An unknown error occurred"
+  }
+}

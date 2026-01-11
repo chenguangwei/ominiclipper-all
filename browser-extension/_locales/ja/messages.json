@@ -1,0 +1,234 @@
+{
+  "extensionName": {
+    "message": "OmniClipper - Webクリッパー",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "ウェブサイトリンク、記事、ノートを効率的に収集・管理",
+    "description": "Extension description"
+  },
+  "commandCapturePage": {
+    "message": "現在のページを保存",
+    "description": "Command to capture current page"
+  },
+  "commandCaptureSelection": {
+    "message": "選択範囲を保存",
+    "description": "Command to capture selection"
+  },
+  "uiTabCapture": {
+    "message": "クリップ",
+    "description": "Capture tab label"
+  },
+  "uiTabHistory": {
+    "message": "履歴",
+    "description": "History tab label"
+  },
+  "uiTabSettings": {
+    "message": "設定",
+    "description": "Settings tab label"
+  },
+  "uiInputTitle": {
+    "message": "タイトル",
+    "description": "Title input label"
+  },
+  "uiInputContent": {
+    "message": "コンテンツ",
+    "description": "Content input label"
+  },
+  "uiInputUrl": {
+    "message": "URL",
+    "description": "URL input label"
+  },
+  "uiSelectType": {
+    "message": "タイプ",
+    "description": "Type select label"
+  },
+  "uiTypeLink": {
+    "message": "リンク",
+    "description": "Link type"
+  },
+  "uiTypeNote": {
+    "message": "ノート",
+    "description": "Note type"
+  },
+  "uiBtnSave": {
+    "message": "保存",
+    "description": "Save button"
+  },
+  "uiBtnCancel": {
+    "message": "キャンセル",
+    "description": "Cancel button"
+  },
+  "uiBtnExport": {
+    "message": "エクスポート",
+    "description": "Export button"
+  },
+  "uiBtnSync": {
+    "message": "同期",
+    "description": "Sync button"
+  },
+  "uiLabelTags": {
+    "message": "タグ",
+    "description": "Tags label"
+  },
+  "uiLabelStorage": {
+    "message": "ストレージ",
+    "description": "Storage label"
+  },
+  "uiStorageLocal": {
+    "message": "ローカル",
+    "description": "Local storage"
+  },
+  "uiStorageFeishu": {
+    "message": "飛書",
+    "description": "Feishu storage"
+  },
+  "uiStorageSupabase": {
+    "message": "Supabase",
+    "description": "Supabase storage"
+  },
+  "uiPlaceholderTitle": {
+    "message": "タイトルを入力",
+    "description": "Title placeholder"
+  },
+  "uiPlaceholderContent": {
+    "message": "コンテンツを入力するか貼り付け",
+    "description": "Content placeholder"
+  },
+  "uiPlaceholderUrl": {
+    "message": "URLを入力",
+    "description": "URL placeholder"
+  },
+  "uiMsgSaved": {
+    "message": "保存しました！",
+    "description": "Saved message"
+  },
+  "uiMsgExported": {
+    "message": "CSVにエクスポートしました",
+    "description": "Exported message"
+  },
+  "uiMsgSynced": {
+    "message": "同期しました",
+    "description": "Synced message"
+  },
+  "uiMsgError": {
+    "message": "エラーが発生しました",
+    "description": "Error message"
+  },
+  "uiMsgNoItems": {
+    "message": "まだアイテムがありません",
+    "description": "No items message"
+  },
+  "uiLabelSearch": {
+    "message": "検索",
+    "description": "Search label"
+  },
+  "uiLabelFilter": {
+    "message": "フィルター",
+    "description": "Filter label"
+  },
+  "uiBtnDelete": {
+    "message": "削除",
+    "description": "Delete button"
+  },
+  "uiBtnEdit": {
+    "message": "編集",
+    "description": "Edit button"
+  },
+  "uiLabelSettings": {
+    "message": "設定",
+    "description": "Settings label"
+  },
+  "uiLabelConnection": {
+    "message": "接続",
+    "description": "Connection settings"
+  },
+  "uiLabelApiKey": {
+    "message": "APIキー",
+    "description": "API key label"
+  },
+  "uiLabelAppId": {
+    "message": "アプリID",
+    "description": "App ID label"
+  },
+  "uiLabelAppSecret": {
+    "message": "アプリシークレット",
+    "description": "App secret label"
+  },
+  "uiLabelBaseToken": {
+    "message": "ベーストークン",
+    "description": "Base token label"
+  },
+  "uiLabelTableId": {
+    "message": "テーブルID",
+    "description": "Table ID label"
+  },
+  "uiBtnTestConnection": {
+    "message": "接続をテスト",
+    "description": "Test connection button"
+  },
+  "uiConnectionSuccess": {
+    "message": "接続成功！",
+    "description": "Connection success message"
+  },
+  "uiConnectionFailed": {
+    "message": "接続に失敗しました",
+    "description": "Connection failed message"
+  },
+  "uiLabelAuth": {
+    "message": "認証",
+    "description": "Authentication section"
+  },
+  "uiBtnLogin": {
+    "message": "ログイン",
+    "description": "Login button"
+  },
+  "uiBtnLogout": {
+    "message": "ログアウト",
+    "description": "Logout button"
+  },
+  "uiLabelEmail": {
+    "message": "メール",
+    "description": "Email label"
+  },
+  "uiLabelPassword": {
+    "message": "パスワード",
+    "description": "Password label"
+  },
+  "notifications_installed": {
+    "message": "拡張機能アイコンをクリックしてウェブコンテンツの収集を開始しましょう！",
+    "description": "Notification message on install"
+  },
+  "uiOfflineMode": {
+    "message": "オフラインモード - 接続が回復すると同期されます",
+    "description": "Offline mode indicator"
+  },
+  "uiPendingSync": {
+    "message": "同期保留中",
+    "description": "Pending sync indicator"
+  },
+  "uiSyncFailed": {
+    "message": "同期失敗",
+    "description": "Sync failed indicator"
+  },
+  "uiBtnRetry": {
+    "message": "再試行",
+    "description": "Retry button"
+  },
+  "uiAiSummary": {
+    "message": "AI要約",
+    "description": "AI summary label"
+  },
+  "uiBtnGenerateSummary": {
+    "message": "要約を生成",
+    "description": "Generate summary button"
+  },
+  "uiGeneratingSummary": {
+    "message": "生成中...",
+    "description": "Generating summary"
+  },
+  "uiNoSummary": {
+    "message": "AI要約が利用できません",
+    "description": "No AI summary available"
+  }
+}

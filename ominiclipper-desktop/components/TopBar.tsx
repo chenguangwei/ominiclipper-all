@@ -7,11 +7,24 @@ interface TopBarProps {
   onChangeViewMode: (mode: ViewMode) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onAddClick: () => void;
+  onSyncClick: () => void;
+  onImportExportClick: () => void;
+  isSyncing?: boolean;
 }
 
-const TopBar: React.FC<TopBarProps> = ({ viewMode, onChangeViewMode, searchQuery, onSearchChange }) => {
+const TopBar: React.FC<TopBarProps> = ({
+  viewMode,
+  onChangeViewMode,
+  searchQuery,
+  onSearchChange,
+  onAddClick,
+  onSyncClick,
+  onImportExportClick,
+  isSyncing = false,
+}) => {
   return (
-    <header className="flex h-12 items-center justify-between border-b border-white/5 bg-[#252525]/80 px-4 mac-blur sticky top-0 z-50 select-none">
+    <header className="flex h-12 items-center justify-between border-b border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-tertiary/80 px-4 mac-blur sticky top-0 z-50 select-none">
       <div className="flex items-center gap-3">
         {/* Fake Traffic Lights */}
         <div className="flex gap-1.5 shrink-0 group">
@@ -21,25 +34,25 @@ const TopBar: React.FC<TopBarProps> = ({ viewMode, onChangeViewMode, searchQuery
         </div>
 
         {/* View Switcher */}
-        <div className="hidden sm:flex bg-black/20 p-0.5 rounded-lg ml-2">
-          <button 
+        <div className="hidden sm:flex bg-surface-secondary p-0.5 rounded-lg ml-2">
+          <button
             onClick={() => onChangeViewMode(ViewMode.TABLE)}
-            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.TABLE ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Table View"
+            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.TABLE ? 'bg-surface-tertiary text-content shadow-sm' : 'text-content-secondary hover:text-content'}`}
+            title="Table View (⌘1)"
           >
             <Icon name="format_list_bulleted" className="text-[18px]" />
           </button>
-          <button 
+          <button
             onClick={() => onChangeViewMode(ViewMode.LIST_DETAIL)}
-            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.LIST_DETAIL ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Split View"
+            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.LIST_DETAIL ? 'bg-surface-tertiary text-content shadow-sm' : 'text-content-secondary hover:text-content'}`}
+            title="Split View (⌘2)"
           >
-             <Icon name="view_column" className="text-[18px]" />
+            <Icon name="view_column" className="text-[18px]" />
           </button>
-           <button 
+          <button
             onClick={() => onChangeViewMode(ViewMode.GRID)}
-            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.GRID ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-            title="Grid View"
+            className={`flex items-center justify-center h-6 px-3 rounded-md transition-all ${viewMode === ViewMode.GRID ? 'bg-surface-tertiary text-content shadow-sm' : 'text-content-secondary hover:text-content'}`}
+            title="Grid View (⌘3)"
           >
             <Icon name="grid_view" className="text-[18px]" />
           </button>
@@ -49,23 +62,47 @@ const TopBar: React.FC<TopBarProps> = ({ viewMode, onChangeViewMode, searchQuery
       {/* Search Bar */}
       <div className="flex-1 mx-4 max-w-xl">
         <div className="relative flex items-center">
-          <Icon name="search" className="absolute left-2 text-[18px] text-slate-500" />
-          <input 
-            type="text" 
+          <Icon name="search" className="absolute left-2 text-[18px] text-content-secondary" />
+          <input
+            type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="h-7 w-full rounded-md border-none bg-white/5 pl-8 pr-2 text-sm text-slate-200 focus:ring-1 focus:ring-primary/50 placeholder:text-slate-500 outline-none transition-all" 
-            placeholder="Search resources..."
+            className="h-7 w-full rounded-md border-none bg-surface-secondary pl-8 pr-2 text-sm text-content focus:ring-1 focus:ring-primary/50 placeholder:text-content-secondary outline-none transition-all"
+            placeholder="Search resources... (⌘F)"
           />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange('')}
+              className="absolute right-2 text-content-secondary hover:text-content"
+            >
+              <Icon name="close" className="text-[16px]" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Add Button */}
+      {/* Action Buttons */}
       <div className="flex items-center gap-1">
-         <button className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5 text-slate-400 transition-colors" title="Sync Status">
-           <Icon name="cloud_sync" />
-         </button>
-        <button className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-white/5 text-slate-400 transition-colors">
+        <button
+          onClick={onImportExportClick}
+          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors"
+          title="Import/Export (⌘E)"
+        >
+          <Icon name="import_export" />
+        </button>
+        <button
+          onClick={onSyncClick}
+          disabled={isSyncing}
+          className={`flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors ${isSyncing ? 'animate-spin' : ''}`}
+          title="Sync with Cloud"
+        >
+          <Icon name="cloud_sync" />
+        </button>
+        <button
+          onClick={onAddClick}
+          className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/20 hover:bg-primary/30 text-primary transition-colors"
+          title="Add New Resource (⌘N)"
+        >
           <Icon name="add" />
         </button>
       </div>

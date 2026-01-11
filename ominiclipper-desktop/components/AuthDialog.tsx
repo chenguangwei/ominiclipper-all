@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 import { getClient, saveSupabaseConfig, getSupabaseConfig, resetClient } from '../supabaseClient';
 import { APP_THEMES } from '../constants';
+import { ColorMode } from '../types';
 
 interface AuthDialogProps {
   isOpen: boolean;
@@ -9,18 +10,28 @@ interface AuthDialogProps {
   onLoginSuccess: (user: any) => void;
   currentThemeId: string;
   onThemeChange: (id: string) => void;
+  colorMode: ColorMode;
+  onColorModeChange: (mode: ColorMode) => void;
   user: any;
   onLogout: () => void;
 }
 
 type SettingsTab = 'account' | 'appearance' | 'connection';
 
-const AuthDialog: React.FC<AuthDialogProps> = ({ 
-    isOpen, 
-    onClose, 
-    onLoginSuccess, 
-    currentThemeId, 
-    onThemeChange, 
+const COLOR_MODES: { id: ColorMode; label: string; icon: string }[] = [
+  { id: 'light', label: 'Light', icon: 'light_mode' },
+  { id: 'dark', label: 'Dark', icon: 'dark_mode' },
+  { id: 'system', label: 'System', icon: 'settings_suggest' },
+];
+
+const AuthDialog: React.FC<AuthDialogProps> = ({
+    isOpen,
+    onClose,
+    onLoginSuccess,
+    currentThemeId,
+    onThemeChange,
+    colorMode,
+    onColorModeChange,
     user,
     onLogout
 }) => {
@@ -93,27 +104,51 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
           case 'appearance':
               return (
                   <div className="space-y-6">
+                      {/* Color Mode Selector */}
                       <div>
-                          <h3 className="text-sm font-medium text-white mb-3">Accent Color</h3>
-                          <div className="grid grid-cols-3 gap-3">
-                              {APP_THEMES.map(theme => (
-                                  <button 
-                                      key={theme.id}
-                                      onClick={() => onThemeChange(theme.id)}
-                                      className={`flex items-center gap-3 p-2 rounded-lg border transition-all ${currentThemeId === theme.id ? 'bg-white/10 border-primary ring-1 ring-primary' : 'bg-black/20 border-transparent hover:bg-white/5'}`}
+                          <h3 className="text-sm font-medium text-content mb-3">Color Mode</h3>
+                          <div className="grid grid-cols-3 gap-2">
+                              {COLOR_MODES.map(mode => (
+                                  <button
+                                      key={mode.id}
+                                      onClick={() => onColorModeChange(mode.id)}
+                                      className={`flex flex-col items-center justify-center gap-2 p-3 rounded-lg border transition-all ${
+                                          colorMode === mode.id
+                                              ? 'bg-primary/20 border-primary ring-1 ring-primary'
+                                              : 'bg-surface-tertiary border-transparent hover:bg-surface-secondary'
+                                      }`}
                                   >
-                                      <div 
-                                        className="w-6 h-6 rounded-full shadow-sm"
-                                        style={{ backgroundColor: theme.hex }}
-                                      ></div>
-                                      <span className="text-xs text-slate-300">{theme.name}</span>
+                                      <Icon name={mode.icon} className="text-[24px] text-content" />
+                                      <span className="text-xs text-content-secondary">{mode.label}</span>
                                   </button>
                               ))}
                           </div>
                       </div>
-                      <div className="p-4 bg-white/5 rounded-lg border border-white/5">
-                          <p className="text-xs text-slate-400">
-                              Preview: 
+
+                      {/* Accent Color */}
+                      <div>
+                          <h3 className="text-sm font-medium text-content mb-3">Accent Color</h3>
+                          <div className="grid grid-cols-3 gap-3">
+                              {APP_THEMES.map(theme => (
+                                  <button
+                                      key={theme.id}
+                                      onClick={() => onThemeChange(theme.id)}
+                                      className={`flex items-center gap-3 p-2 rounded-lg border transition-all ${currentThemeId === theme.id ? 'bg-primary/10 border-primary ring-1 ring-primary' : 'bg-surface-tertiary border-transparent hover:bg-surface-secondary'}`}
+                                  >
+                                      <div
+                                        className="w-6 h-6 rounded-full shadow-sm"
+                                        style={{ backgroundColor: theme.hex }}
+                                      ></div>
+                                      <span className="text-xs text-content-secondary">{theme.name}</span>
+                                  </button>
+                              ))}
+                          </div>
+                      </div>
+
+                      {/* Preview */}
+                      <div className="p-4 bg-surface-tertiary rounded-lg border border-[rgb(var(--color-border)/var(--border-opacity))]">
+                          <p className="text-xs text-content-secondary">
+                              Preview:
                               <span className="text-primary font-medium ml-1">The quick brown fox jumps over the lazy dog.</span>
                           </p>
                           <button className="mt-3 px-3 py-1.5 bg-primary text-white text-xs rounded shadow-sm">

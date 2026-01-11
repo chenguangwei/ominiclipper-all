@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "OmniClipper - Web Collector"
+  },
+  "extensionDescription": {
+    "message": "A powerful browser extension for collecting web content, supporting links, articles, and notes with cloud sync."
+  },
+  "commandCapturePage": {
+    "message": "Capture current page"
+  },
+  "commandCaptureSelection": {
+    "message": "Capture selected content"
+  }
+}

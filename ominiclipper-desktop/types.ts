@@ -7,6 +7,10 @@ export enum ResourceType {
   UNKNOWN = 'UNKNOWN'
 }
 
+export type FileStorageMode = 'embed' | 'reference';
+
+export type ColorMode = 'dark' | 'light' | 'system';
+
 export enum ViewMode {
   LIST_DETAIL = 'LIST_DETAIL', // Sidebar -> List -> Detail
   TABLE = 'TABLE',             // Sidebar -> Full Table
@@ -38,13 +42,52 @@ export interface ResourceItem {
   createdAt: string;
   updatedAt: string;
   path?: string; // File path or URL
+  localPath?: string; // Local file path for Electron
+  fileSize?: number; // File size in bytes
+  mimeType?: string; // MIME type
   isCloud: boolean; // Synced to cloud (Pro feature)
+  isStarred: boolean; // Starred/Favorite
   contentSnippet?: string; // Brief description or content
+  aiSummary?: string; // AI-generated summary
+  storageMode?: FileStorageMode; // 'embed' = Base64 embedded, 'reference' = path only
+  embeddedData?: string; // Base64 encoded file content (for embed mode)
+  originalPath?: string; // Original file path/name for reference
+}
+
+// File system entry for file browser
+export interface FileSystemEntry {
+  id: string;
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  modifiedAt?: string;
+  children?: FileSystemEntry[];
+}
+
+// Recently used file
+export interface RecentFile {
+  id: string;
+  path: string;
+  title: string;
+  type: ResourceType;
+  lastOpened: number;
+  count: number;
+}
+
+// File statistics
+export interface FileStats {
+  totalSize: number;
+  totalCount: number;
+  byType: Record<ResourceType, number>;
+  oldestFile?: string;
+  newestFile?: string;
 }
 
 export interface FilterState {
   search: string;
   tagId: string | null;
   color: string | null;
-  folderId: string; // 'all', 'trash', 'recent', 'uncategorized', etc. or UUID
+  folderId: string; // 'all', 'trash', 'recent', 'uncategorized', 'starred', etc. or UUID
+  isStarred?: boolean; // Filter for starred items
 }

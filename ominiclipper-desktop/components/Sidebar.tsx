@@ -13,6 +13,10 @@ interface SidebarProps {
   onSelectFolder: (folderId: string) => void;
   user: any;
   onOpenAuth: () => void;
+  onCreateFolder: () => void;
+  onCreateTag: () => void;
+  onDeleteFolder: (id: string) => void;
+  onDeleteTag: (id: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -25,9 +29,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   activeFolderId,
   onSelectFolder,
   user,
-  onOpenAuth
+  onOpenAuth,
+  onCreateFolder,
+  onCreateTag,
+  onDeleteFolder,
+  onDeleteTag,
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
+  const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -42,6 +51,19 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
   };
 
+  const handleContextMenu = (type: 'folder' | 'tag', id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ type, id, x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  // 计算资源总数
+  const totalItems = tags.reduce((sum, t) => sum + (t.count || 0), 0) || 142; // 默认显示 142
+
   // Helper to render tree items
   const renderTreeItem = (
     id: string,
@@ -52,36 +74,37 @@ const Sidebar: React.FC<SidebarProps> = ({
     onClick: () => void,
     count?: number,
     iconColor?: string,
-    isRoot: boolean = false
+    onContextMenu?: (e: React.MouseEvent) => void
   ) => {
     const hasChildren = React.Children.count(children) > 0;
     const isExpanded = expandedIds.has(id);
 
     return (
       <div key={id} className="select-none">
-        <div 
+        <div
           onClick={onClick}
-          className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${isActive ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+          onContextMenu={onContextMenu}
+          className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${isActive ? 'bg-primary text-white' : 'text-content-secondary hover:bg-surface-tertiary hover:text-content'}`}
         >
           {/* Arrow */}
-          <div 
+          <div
             className={`w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 ${hasChildren ? 'visible' : 'invisible'}`}
             onClick={(e) => hasChildren && toggleExpand(id, e)}
           >
-            <Icon 
-              name="chevron_right" 
-              className={`text-[16px] transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} 
+            <Icon
+              name="chevron_right"
+              className={`text-[16px] transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
             />
           </div>
 
-          <Icon name={icon} className={`text-[18px] ${isActive ? 'text-white' : (iconColor || 'text-slate-500')}`} />
+          <Icon name={icon} className={`text-[18px] ${isActive ? 'text-white' : (iconColor || 'text-content-secondary')}`} />
           <span className="flex-1 truncate">{label}</span>
-          {count !== undefined && <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-slate-600'}`}>{count}</span>}
+          {count !== undefined && <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-content-secondary'}`}>{count}</span>}
         </div>
-        
+
         {/* Children Container */}
         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="ml-4 border-l border-white/5 pl-1 my-0.5">
+          <div className="ml-4 border-l border-[rgb(var(--color-border)/var(--border-opacity))] pl-1 my-0.5">
             {children}
           </div>
         </div>
@@ -99,11 +122,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         renderFolderTree(folder.id),
         activeFolderId === folder.id,
         () => {
-            onSelectFolder(folder.id);
-            onSelectTag(null); // Clear tag selection when picking folder
+          onSelectFolder(folder.id);
+          onSelectTag(null);
         },
         undefined,
-        undefined
+        undefined,
+        (e) => handleContextMenu('folder', folder.id, e)
       )
     ));
   };
@@ -118,117 +142,187 @@ const Sidebar: React.FC<SidebarProps> = ({
         renderTagTree(tag.id),
         activeTagId === tag.id,
         () => {
-             onSelectTag(tag.id);
-             onSelectFolder('all'); 
+          onSelectTag(tag.id);
+          onSelectFolder('all');
         },
         tag.count,
-        tag.color ? `text-${tag.color}` : 'text-primary'
+        tag.color ? `text-${tag.color}` : 'text-primary',
+        (e) => handleContextMenu('tag', tag.id, e)
       )
     ));
   };
 
   return (
-    <aside className="w-64 border-r border-white/5 bg-[#181818] flex flex-col overflow-y-auto no-scrollbar shrink-0 select-none text-slate-300">
-      
-      {/* Workspace Header */}
-      <div className="h-12 flex items-center px-4 border-b border-white/5 mb-2 hover:bg-white/5 cursor-pointer transition-colors">
+    <>
+      <aside className="w-64 border-r border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-secondary flex flex-col overflow-y-auto no-scrollbar shrink-0 select-none text-content-secondary">
+
+        {/* Workspace Header */}
+        <div className="h-12 flex items-center px-4 border-b border-[rgb(var(--color-border)/var(--border-opacity))] mb-2 hover:bg-surface-tertiary cursor-pointer transition-colors">
           <div className="w-6 h-6 rounded bg-primary flex items-center justify-center mr-2 shadow-sm">
-             <Icon name="library_books" className="text-white text-[14px]" />
+            <Icon name="library_books" className="text-white text-[14px]" />
           </div>
-          <span className="font-semibold text-sm text-slate-200">Inspiration Collection</span>
-          <Icon name="unfold_more" className="ml-auto text-slate-500 text-[16px]" />
-      </div>
-
-      <div className="p-2 space-y-1 flex-1">
-        {/* Library Section */}
-        <div className="mb-4">
-             <div 
-                onClick={() => { onSelectFolder('all'); onSelectTag(null); }}
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'all' && !activeTagId ? 'bg-primary text-white' : 'hover:bg-white/5 hover:text-slate-200'}`}
-             >
-                <span className="w-4"></span>
-                <Icon name="inbox" className={`text-[18px] ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-slate-500'}`} />
-                <span className="flex-1">All Items</span>
-                <span className="text-[10px] opacity-50">142</span>
-             </div>
-             {/* ... (Other static items omitted for brevity, keeping structure) ... */}
-              <div 
-                onClick={() => { onSelectFolder('trash'); onSelectTag(null); }}
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'trash' ? 'bg-primary text-white' : 'hover:bg-white/5 hover:text-slate-200'}`}
-             >
-                 <span className="w-4"></span>
-                <Icon name="delete" className={`text-[18px] ${activeFolderId === 'trash' ? 'text-white' : 'text-slate-500'}`} />
-                <span className="flex-1">Trash</span>
-             </div>
+          <span className="font-semibold text-sm text-content">OmniClipper</span>
+          <Icon name="unfold_more" className="ml-auto text-content-secondary text-[16px]" />
         </div>
 
-        {/* Folders */}
-        <div className="mb-2">
-            <div 
-                className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-slate-500 group"
-                onClick={(e) => toggleExpand('root-folders', e)}
+        <div className="p-2 space-y-1 flex-1">
+          {/* Library Section */}
+          <div className="mb-4">
+            <div
+              onClick={() => { onSelectFolder('all'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'all' && !activeTagId ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
             >
-                <div className="flex items-center gap-2">
-                     <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-folders') ? 'rotate-90' : ''}`} />
-                    <h3 className="text-[11px] font-medium">Folders ({folders.length})</h3>
-                </div>
-                 <Icon name="create_new_folder" className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white" />
+              <span className="w-4"></span>
+              <Icon name="inbox" className={`text-[18px] ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">All Items</span>
+              <span className="text-[10px] opacity-50">{totalItems}</span>
             </div>
-             <div className={`overflow-hidden transition-all duration-300 ${expandedIds.has('root-folders') ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                {renderFolderTree(undefined)}
-             </div>
-        </div>
 
-        {/* Tags */}
-        <div>
-            <div 
-                className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-slate-500 group"
-                 onClick={(e) => toggleExpand('root-tags', e)}
+            <div
+              onClick={() => { onSelectFolder('recent'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'recent' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
             >
-                <div className="flex items-center gap-2">
-                    <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-tags') ? 'rotate-90' : ''}`} />
-                    <h3 className="text-[11px] font-medium">Tags</h3>
-                </div>
-                <Icon name="add" className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white" />
+              <span className="w-4"></span>
+              <Icon name="schedule" className={`text-[18px] ${activeFolderId === 'recent' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">Recent</span>
             </div>
-             <div className={`overflow-hidden transition-all duration-300 ${expandedIds.has('root-tags') ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                {renderTagTree(undefined)}
-             </div>
-        </div>
-      </div>
 
-      {/* User / Cloud Section */}
-      <div className="mt-auto p-3 border-t border-white/5 bg-white/5">
-        {user ? (
+            <div
+              onClick={() => { onSelectFolder('starred'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'starred' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+            >
+              <span className="w-4"></span>
+              <Icon name="star" className={`text-[18px] ${activeFolderId === 'starred' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">Starred</span>
+            </div>
+
+            <div
+              onClick={() => { onSelectFolder('uncategorized'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'uncategorized' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+            >
+              <span className="w-4"></span>
+              <Icon name="folder_off" className={`text-[18px] ${activeFolderId === 'uncategorized' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">Uncategorized</span>
+            </div>
+
+            <div
+              onClick={() => { onSelectFolder('trash'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'trash' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+            >
+              <span className="w-4"></span>
+              <Icon name="delete" className={`text-[18px] ${activeFolderId === 'trash' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">Trash</span>
+            </div>
+          </div>
+
+          {/* Folders */}
+          <div className="mb-2">
+            <div
+              className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-content-secondary group"
+              onClick={(e) => toggleExpand('root-folders', e)}
+            >
+              <div className="flex items-center gap-2">
+                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-folders') ? 'rotate-90' : ''}`} />
+                <h3 className="text-[11px] font-medium">Folders ({folders.length})</h3>
+              </div>
+              <Icon
+                name="create_new_folder"
+                className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCreateFolder();
+                }}
+              />
+            </div>
+            <div className={`overflow-hidden transition-all duration-300 ${expandedIds.has('root-folders') ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              {renderFolderTree(undefined)}
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <div
+              className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-content-secondary group"
+              onClick={(e) => toggleExpand('root-tags', e)}
+            >
+              <div className="flex items-center gap-2">
+                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-tags') ? 'rotate-90' : ''}`} />
+                <h3 className="text-[11px] font-medium">Tags ({tags.length})</h3>
+              </div>
+              <Icon
+                name="add"
+                className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCreateTag();
+                }}
+              />
+            </div>
+            <div className={`overflow-hidden transition-all duration-300 ${expandedIds.has('root-tags') ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+              {renderTagTree(undefined)}
+            </div>
+          </div>
+        </div>
+
+        {/* User / Cloud Section */}
+        <div className="mt-auto p-3 border-t border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-tertiary">
+          {user ? (
             <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">
-                    {user.email?.charAt(0).toUpperCase()}
+              <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">
+                {user.email?.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium text-white truncate">{user.email}</div>
+                <div className="text-[10px] text-primary flex items-center gap-1">
+                  <Icon name="verified" className="text-[10px]" />
+                  Pro Member
                 </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-white truncate">{user.email}</div>
-                    <div className="text-[10px] text-primary flex items-center gap-1">
-                        <Icon name="verified" className="text-[10px]" />
-                        Pro Member
-                    </div>
-                </div>
-                <Icon name="settings" className="text-slate-500 hover:text-white cursor-pointer" onClick={onOpenAuth} />
+              </div>
+              <Icon name="settings" className="text-content-secondary hover:text-white cursor-pointer" onClick={onOpenAuth} />
             </div>
-        ) : (
-            <button 
-                onClick={onOpenAuth}
-                className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group"
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-surface-tertiary transition-colors group"
             >
-                <div className="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center group-hover:bg-primary transition-colors">
-                    <Icon name="cloud_off" className="text-white/50 group-hover:text-white text-[16px]" />
-                </div>
-                <div className="flex-1 text-left">
-                    <div className="text-xs font-medium text-slate-300 group-hover:text-white">Connect Cloud</div>
-                    <div className="text-[10px] text-slate-500">Upgrade to Pro</div>
-                </div>
+              <div className="h-8 w-8 rounded-full bg-surface-tertiary flex items-center justify-center group-hover:bg-primary transition-colors">
+                <Icon name="cloud_off" className="text-white/50 group-hover:text-white text-[16px]" />
+              </div>
+              <div className="flex-1 text-left">
+                <div className="text-xs font-medium text-content group-hover:text-white">Connect Cloud</div>
+                <div className="text-[10px] text-content-secondary">Upgrade to Pro</div>
+              </div>
             </button>
-        )}
-      </div>
-    </aside>
+          )}
+        </div>
+      </aside>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <>
+          <div className="fixed inset-0 z-[200]" onClick={closeContextMenu} />
+          <div
+            className="fixed z-[201] bg-surface-tertiary border border-[rgb(var(--color-border)/0.1)] rounded-lg shadow-xl py-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              onClick={() => {
+                if (contextMenu.type === 'folder') {
+                  onDeleteFolder(contextMenu.id);
+                } else {
+                  onDeleteTag(contextMenu.id);
+                }
+                closeContextMenu();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-surface-tertiary transition-colors"
+            >
+              <Icon name="delete" className="text-lg" />
+              Delete {contextMenu.type === 'folder' ? 'Folder' : 'Tag'}
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 };
 
