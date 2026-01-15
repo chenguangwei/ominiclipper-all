@@ -52,6 +52,7 @@ export interface ResourceItem {
   storageMode?: FileStorageMode; // 'embed' = Base64 embedded, 'reference' = path only
   embeddedData?: string; // Base64 encoded file content (for embed mode)
   originalPath?: string; // Original file path/name for reference
+  source?: 'desktop' | 'browser-extension'; // Data source
 }
 
 // File system entry for file browser

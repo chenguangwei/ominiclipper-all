@@ -48,7 +48,11 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   // Use originalPath if available (for imported files), otherwise use path
   const displayPath = item.originalPath || item.path || 'Local / Library';
   // Check if this item can be viewed in document viewer
-  const canViewInDocument = (item.type === ResourceType.PDF || item.type === ResourceType.EPUB) && item.path;
+  const canViewInDocument = (
+    item.type === ResourceType.PDF ||
+    item.type === ResourceType.EPUB ||
+    item.type === ResourceType.WORD
+  ) && (item.path || item.embeddedData || item.localPath);
   // For document types, always show "View" button
   const shouldShowView = canViewInDocument && onOpenDocument;
 
@@ -73,11 +77,54 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     }
   };
 
+  // Open in system default application (for documents)
+  const handleOpenInSystem = async () => {
+    // For documents, try to open with system default app
+    const filePath = item.localPath || item.originalPath;
+    if (filePath && (window as any).electronAPI?.openPath) {
+      try {
+        await (window as any).electronAPI.openPath(filePath);
+      } catch (error) {
+        console.error('Failed to open file:', error);
+        // Fallback to viewer if available
+        if (shouldShowView && onOpenDocument) {
+          onOpenDocument(item);
+        }
+      }
+    } else if (shouldShowView && onOpenDocument) {
+      // Fallback to internal viewer
+      onOpenDocument(item);
+    }
+  };
+
+  // Show file in Finder/Explorer
+  const handleShowInFolder = async () => {
+    const filePath = item.localPath || item.originalPath;
+    if (filePath && (window as any).electronAPI?.showItemInFolder) {
+      try {
+        await (window as any).electronAPI.showItemInFolder(filePath);
+      } catch (error) {
+        console.error('Failed to show in folder:', error);
+      }
+    }
+  };
+
   const handleOpen = () => {
-    // If has document viewer, open in viewer; otherwise try to open path
-    if (shouldShowView) {
+    // For web pages, open URL in browser
+    if (item.type === ResourceType.WEB && item.path) {
+      if ((window as any).electronAPI?.openExternal) {
+        (window as any).electronAPI.openExternal(item.path);
+      } else {
+        window.open(item.path, '_blank');
+      }
+      return;
+    }
+
+    // For documents with viewer, open in viewer
+    if (shouldShowView && onOpenDocument) {
       onOpenDocument(item);
     } else if (item.path) {
+      // Fallback: try to open path directly
       window.open(item.path, '_blank');
     }
   };
@@ -327,9 +374,29 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                     disabled={!item.path && !canViewInDocument}
                     className={openButtonClass}
                   >
-                    <Icon name={shouldShowView ? "picture_as_pdf" : "open_in_new"} />
-                    {shouldShowView ? "View" : "Open"}
+                    <Icon name={item.type === ResourceType.WEB ? "open_in_new" : shouldShowView ? "visibility" : "open_in_new"} />
+                    {item.type === ResourceType.WEB ? "Open" : shouldShowView ? "View" : "Open"}
                   </button>
+                  {/* For documents, show "Open in System" button */}
+                  {canViewInDocument && (item.localPath || item.originalPath) && (
+                    <button
+                      onClick={handleOpenInSystem}
+                      className={secondaryButtonClass}
+                      title="Open with default application"
+                    >
+                      <Icon name="open_in_new" />
+                    </button>
+                  )}
+                  {/* Show in folder button for local files */}
+                  {(item.localPath || item.originalPath) && (
+                    <button
+                      onClick={handleShowInFolder}
+                      className={secondaryButtonClass}
+                      title="Show in Finder"
+                    >
+                      <Icon name="folder_open" />
+                    </button>
+                  )}
                   {onEdit && (
                     <button onClick={onEdit} className={secondaryButtonClass} title="Edit">
                       <Icon name="edit" />

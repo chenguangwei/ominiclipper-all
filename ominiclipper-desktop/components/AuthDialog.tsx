@@ -160,30 +160,30 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
           case 'connection':
               return (
                   <div className="space-y-4">
-                        <p className="text-xs text-slate-400">Enter your Supabase project details to enable Pro cloud features.</p>
+                        <p className={sectionDescClass}>Enter your Supabase project details to enable Pro cloud features.</p>
                         <div>
-                            <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">Project URL</label>
-                            <input 
-                                type="text" 
-                                className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-primary outline-none"
+                            <label className={labelClass}>Project URL</label>
+                            <input
+                                type="text"
+                                className={inputClass}
                                 placeholder="https://xyz.supabase.co"
                                 value={config.url}
                                 onChange={e => setConfig({...config, url: e.target.value})}
                             />
                         </div>
                         <div>
-                            <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">Anon Key</label>
-                            <input 
-                                type="password" 
-                                className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-primary outline-none"
+                            <label className={labelClass}>Anon Key</label>
+                            <input
+                                type="password"
+                                className={inputClass}
                                 placeholder="eyJhbGciOiJIUzI1NiIsInR5..."
                                 value={config.key}
                                 onChange={e => setConfig({...config, key: e.target.value})}
                             />
                         </div>
-                        <button 
+                        <button
                             onClick={handleConfigSave}
-                            className="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-md text-sm font-medium mt-2"
+                            className={submitBtnClass}
                         >
                             Save Settings
                         </button>
@@ -229,42 +229,42 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
                                 {authError}
                             </div>
                         )}
-                        <p className="text-xs text-slate-400">Sign in to sync your library across devices.</p>
+                        <p className={sectionDescClass}>Sign in to sync your library across devices.</p>
                         <div>
-                            <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">Email</label>
-                            <input 
-                                type="email" 
-                                className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-primary outline-none"
+                            <label className={labelClass}>Email</label>
+                            <input
+                                type="email"
+                                className={inputClass}
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
                             />
                         </div>
                         <div>
-                            <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">Password</label>
-                            <input 
-                                type="password" 
-                                className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-primary outline-none"
+                            <label className={labelClass}>Password</label>
+                            <input
+                                type="password"
+                                className={inputClass}
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
                             />
                         </div>
-                        
-                        <button 
+
+                        <button
                             onClick={handleAuth}
                             disabled={loading}
-                            className="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2"
+                            className={submitBtnClass}
                         >
                             {loading && <Icon name="progress_activity" className="animate-spin text-[16px]" />}
                             {authMode === 'login' ? 'Sign In' : 'Create Pro Account'}
                         </button>
 
                         <div className="flex justify-center pt-2">
-                            <button 
+                            <button
                                 onClick={() => {
                                     setAuthMode(authMode === 'login' ? 'signup' : 'login');
                                     setAuthError(null);
                                 }}
-                                className="text-xs text-primary hover:underline"
+                                className={linkClass}
                             >
                                 {authMode === 'login' ? 'Need an account? Sign Up' : 'Have an account? Sign In'}
                             </button>
@@ -274,33 +274,72 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
       }
   };
 
+  const isLight = colorMode === 'light';
+
+  // Light mode classes
+  const dialogClass = isLight
+    ? 'w-[600px] h-[450px] bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200 flex'
+    : 'w-[600px] h-[450px] bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex';
+
+  const sidebarClass = isLight
+    ? 'w-48 bg-gray-50 border-r border-gray-100 flex flex-col p-2 gap-1'
+    : 'w-48 bg-[#181818] border-r border-white/5 flex flex-col p-2 gap-1';
+
+  const sidebarTitleClass = isLight ? 'text-sm font-bold text-gray-700' : 'text-sm font-bold text-slate-200';
+
+  const sidebarItemClass = (tab: string) => isLight
+    ? `flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === tab ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`
+    : `flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === tab ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`;
+
+  const headerClass = isLight
+    ? 'h-12 border-b border-gray-100 flex items-center justify-between px-6 bg-white'
+    : 'h-12 border-b border-white/5 flex items-center justify-between px-6 bg-[#252525]';
+
+  const headerTitleClass = isLight ? 'text-sm font-medium text-gray-900 capitalize' : 'text-sm font-medium text-white capitalize';
+
+  const closeBtnClass = isLight ? 'text-gray-400 hover:text-gray-600' : 'text-slate-500 hover:text-white';
+
+  const inputClass = isLight
+    ? 'w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary'
+    : 'w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:border-primary outline-none';
+
+  const labelClass = isLight ? 'block text-[10px] uppercase text-gray-500 font-bold mb-1' : 'block text-[10px] uppercase text-slate-500 font-bold mb-1';
+
+  const submitBtnClass = isLight
+    ? 'w-full bg-[#007aff] hover:bg-[#0066d6] text-white py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2'
+    : 'w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2';
+
+  const linkClass = isLight ? 'text-xs text-blue-500 hover:underline' : 'text-xs text-primary hover:underline';
+
+  const sectionDescClass = isLight ? 'text-xs text-gray-400' : 'text-xs text-slate-400';
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="w-[600px] h-[450px] bg-[#1e1e1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex">
+      <div className={dialogClass}>
         
         {/* Sidebar */}
-        <div className="w-48 bg-[#181818] border-r border-white/5 flex flex-col p-2 gap-1">
+        <div className={sidebarClass}>
              <div className="h-10 flex items-center px-2 mb-2">
-                 <h2 className="text-sm font-bold text-slate-200">Settings</h2>
+                 <h2 className={sidebarTitleClass}>Settings</h2>
              </div>
-             
-             <button 
+
+             <button
                 onClick={() => setActiveTab('account')}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === 'account' ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                className={sidebarItemClass('account')}
              >
                  <Icon name="account_circle" className="text-[18px]" />
                  Account
              </button>
-              <button 
+              <button
                 onClick={() => setActiveTab('appearance')}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === 'appearance' ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                className={sidebarItemClass('appearance')}
              >
                  <Icon name="palette" className="text-[18px]" />
                  Appearance
              </button>
-             <button 
+             <button
                 onClick={() => setActiveTab('connection')}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === 'connection' ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+                className={sidebarItemClass('connection')}
              >
                  <Icon name="cloud" className="text-[18px]" />
                  Connection
@@ -309,9 +348,9 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
 
         {/* Content */}
         <div className="flex-1 flex flex-col">
-            <div className="h-12 border-b border-white/5 flex items-center justify-between px-6 bg-[#252525]">
-                 <h3 className="text-sm font-medium text-white capitalize">{activeTab}</h3>
-                 <button onClick={onClose} className="text-slate-500 hover:text-white">
+            <div className={headerClass}>
+                 <h3 className={headerTitleClass}>{activeTab}</h3>
+                 <button onClick={onClose} className={closeBtnClass}>
                     <Icon name="close" />
                  </button>
             </div>

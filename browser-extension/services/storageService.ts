@@ -103,7 +103,7 @@ export const StorageService = {
     }
   },
 
-  saveItem: (item: ResourceItem): ResourceItem[] => {
+  saveItem: (item: ResourceItem, syncToDesktop = true): ResourceItem[] => {
     const items = StorageService.getItems();
     if (!item.id) {
       item.id = generateId();
@@ -116,6 +116,16 @@ export const StorageService = {
     }
     const newItems = [item, ...items];
     StorageService.saveItems(newItems);
+
+    // Sync to desktop app asynchronously
+    if (syncToDesktop) {
+      import('./syncClient').then(({ syncToDesktopAsync }) => {
+        syncToDesktopAsync(item);
+      }).catch(() => {
+        // Silent fail - sync is best effort
+      });
+    }
+
     return newItems;
   },
 

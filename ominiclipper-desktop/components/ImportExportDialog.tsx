@@ -136,6 +136,47 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
     }
   };
 
+  const handleBrowserExtensionImport = () => {
+    // Trigger file selection for browser extension export
+    document.getElementById('browser-extension-input')?.click();
+  };
+
+  const handleBrowserExtensionFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const content = event.target?.result as string;
+          const stats = storageService.getImportStats(content);
+          if (stats) {
+            const importedCount = storageService.importFromBrowserExtension(content);
+            if (importedCount > 0) {
+              setMessage({
+                type: 'success',
+                text: `Successfully synced ${importedCount} new items from browser extension!`
+              });
+              setTimeout(() => {
+                window.location.reload();
+              }, 1500);
+            } else {
+              setMessage({
+                type: 'success',
+                text: 'All items are already synced. No new items to import.'
+              });
+            }
+          } else {
+            setMessage({ type: 'error', text: t('error.invalidFile') });
+          }
+        } catch (err) {
+          setMessage({ type: 'error', text: t('error.invalidFile') });
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -234,7 +275,28 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
                 Import data from a backup file. This will merge with existing data.
               </p>
 
+              {/* Browser Extension Sync */}
+              <div className="p-3 bg-[#252525] rounded-lg border border-white/5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon name="extension" className="text-primary" />
+                  <span className="text-sm font-medium text-slate-200">Browser Extension</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Import articles, images, and saved pages from the browser extension.
+                </p>
+                <button
+                  onClick={handleBrowserExtensionImport}
+                  className="w-full py-2 rounded-lg bg-[#2a2a2a] text-slate-300 text-sm font-medium hover:bg-[#333] transition-colors flex items-center justify-center gap-2"
+                >
+                  <Icon name="sync" className="text-[16px]" />
+                  Sync from Browser Extension
+                </button>
+              </div>
+
               {/* Drop Zone */}
+              <p className="text-sm text-slate-400 pt-2 border-t border-white/5">
+                Or import from a backup file:
+              </p>
               <div
                 className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
                   isDragOver
@@ -256,6 +318,14 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
                   type="file"
                   accept=".json,.csv"
                   onChange={handleFileSelect}
+                  className="hidden"
+                />
+                {/* Hidden input for browser extension import */}
+                <input
+                  id="browser-extension-input"
+                  type="file"
+                  accept=".json"
+                  onChange={handleBrowserExtensionFileSelect}
                   className="hidden"
                 />
               </div>

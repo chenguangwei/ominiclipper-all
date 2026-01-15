@@ -5,13 +5,21 @@
 
 import { ResourceType } from '../types';
 
-// PDF.js worker configuration
+// PDF.js worker configuration - using jsDelivr which has better global CDN coverage
 const PDF_JS_VERSION = '4.0.379';
-const PDF_JS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDF_JS_VERSION}`;
+// Try multiple CDNs for better reliability
+const PDF_JS_CDNS = [
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_JS_VERSION}/build`,
+  `https://unpkg.com/pdfjs-dist@${PDF_JS_VERSION}/build`,
+  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDF_JS_VERSION}`,
+];
 
 // EPUB.js configuration
-const EPUB_JS_VERSION = '3.2.1';
-const EPUB_JS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/epub.js/${EPUB_JS_VERSION}`;
+const EPUB_JS_VERSION = '0.3.93';
+const EPUB_JS_CDNS = [
+  `https://cdn.jsdelivr.net/npm/epubjs@${EPUB_JS_VERSION}/dist`,
+  `https://unpkg.com/epubjs@${EPUB_JS_VERSION}/dist`,
+];
 
 // Document viewer state
 export interface DocumentViewerState {
@@ -29,48 +37,78 @@ export interface TocEntry {
   href?: string;
 }
 
-// Initialize PDF.js
-export async function initPdfJs(): Promise<boolean> {
-  if ((window as any).pdfjsLib) {
-    return true;
-  }
-
+// Load script with timeout
+function loadScript(src: string, timeout: number = 10000): Promise<boolean> {
   return new Promise((resolve) => {
-    // Load PDF.js from CDN
     const script = document.createElement('script');
-    script.src = `${PDF_JS_CDN}/pdf.min.js`;
+    script.src = src;
+
+    const timeoutId = setTimeout(() => {
+      console.warn(`Script load timeout: ${src}`);
+      resolve(false);
+    }, timeout);
+
     script.onload = () => {
-      try {
-        // Set worker source - using jsDelivr for better CORS support
-        (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDF_JS_CDN}/pdf.worker.min.js`;
-        resolve(true);
-      } catch (e) {
-        console.error('PDF.js initialization error:', e);
-        resolve(false);
-      }
+      clearTimeout(timeoutId);
+      resolve(true);
     };
-    script.onerror = () => {
-      console.error('Failed to load PDF.js');
+    script.onerror = (e) => {
+      clearTimeout(timeoutId);
+      console.error(`Failed to load script: ${src}`, e);
       resolve(false);
     };
     document.head.appendChild(script);
   });
 }
 
-// Initialize EPUB.js
-export async function initEpubJs(): Promise<boolean> {
-  if ((window as any).ePub) {
+// Initialize PDF.js with fallback CDNs
+export async function initPdfJs(): Promise<boolean> {
+  if ((window as any).pdfjsLib) {
+    console.log('PDF.js already loaded');
     return true;
   }
 
-  return new Promise((resolve) => {
-    // Load EPUB.js
-    const script = document.createElement('script');
-    script.src = `${EPUB_JS_CDN}/epub.min.js`;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
+  // Try each CDN until one works
+  for (const cdn of PDF_JS_CDNS) {
+    console.log(`Trying to load PDF.js from: ${cdn}`);
+    const loaded = await loadScript(`${cdn}/pdf.min.js`);
+
+    if (loaded && (window as any).pdfjsLib) {
+      try {
+        // Set worker source from the same CDN
+        (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = `${cdn}/pdf.worker.min.js`;
+        console.log('PDF.js loaded successfully from:', cdn);
+        return true;
+      } catch (e) {
+        console.error('PDF.js initialization error:', e);
+      }
+    }
+  }
+
+  console.error('Failed to load PDF.js from all CDNs');
+  return false;
+}
+
+// Initialize EPUB.js with fallback CDNs
+export async function initEpubJs(): Promise<boolean> {
+  if ((window as any).ePub) {
+    console.log('EPUB.js already loaded');
+    return true;
+  }
+
+  // Try each CDN until one works
+  for (const cdn of EPUB_JS_CDNS) {
+    console.log(`Trying to load EPUB.js from: ${cdn}`);
+    const loaded = await loadScript(`${cdn}/epub.min.js`);
+
+    if (loaded && (window as any).ePub) {
+      console.log('EPUB.js loaded successfully from:', cdn);
+      return true;
+    }
+  }
+
+  console.error('Failed to load EPUB.js from all CDNs');
+  return false;
 }
 
 // Get document type from URL/path

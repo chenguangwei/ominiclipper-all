@@ -1,5 +1,5 @@
 /**
- * OmniClipper Desktop - Electron Main Process
+ * OmniClipper Desktop - Electron Main Process (ESM)
  */
 
 import { app, BrowserWindow, Menu, shell } from 'electron';
@@ -24,7 +24,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, '../dist-electron/preload/index.cjs')
+      preload: path.join(__dirname, '../dist-electron/preload/preload.js')
     },
     backgroundColor: '#1e1e1e',
     titleBarStyle: 'hiddenInset',

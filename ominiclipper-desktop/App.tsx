@@ -13,6 +13,7 @@ import ConfirmDialog from './components/ConfirmDialog';
 import ImportExportDialog from './components/ImportExportDialog';
 import DocumentViewer from './components/DocumentViewer';
 import FileDropDialog from './components/FileDropDialog';
+import FolderDropDialog from './components/FolderDropDialog';
 import { APP_THEMES } from './constants';
 import { ViewMode, FilterState, ResourceItem, Tag, Folder, ResourceType, FileStorageMode, ColorMode } from './types';
 import Icon from './components/Icon';
@@ -74,6 +75,8 @@ const App: React.FC = () => {
   const dragCounterRef = useRef(0);
   const [pendingDropFile, setPendingDropFile] = useState<File | null>(null);
   const [isFileDropDialogOpen, setIsFileDropDialogOpen] = useState(false);
+  const [pendingDropFolder, setPendingDropFolder] = useState<string | null>(null);
+  const [isFolderDropDialogOpen, setIsFolderDropDialogOpen] = useState(false);
 
   // Color mode state
   const [colorMode, setColorMode] = useState<ColorMode>(() => {
@@ -106,6 +109,31 @@ const App: React.FC = () => {
     const locale = getLocale();
     console.log('Current locale:', locale);
   }, []);
+
+  // Handle browser extension sync
+  useEffect(() => {
+    // Expose sync handler to window for Electron IPC callbacks
+    (window as any).handleBrowserExtensionSync = (item: ResourceItem) => {
+      console.log('[App] Received sync from browser extension:', item.title);
+
+      // Check if item already exists
+      const existingIds = new Set(items.map(i => i.id));
+      if (existingIds.has(item.id)) {
+        console.log('[App] Item already exists, skipping:', item.id);
+        return;
+      }
+
+      // Add item to state and storage
+      const newItems = [item, ...items];
+      setItems(newItems);
+      storageService.saveItems(newItems);
+      console.log('[App] Synced item from browser extension:', item.title);
+    };
+
+    return () => {
+      delete (window as any).handleBrowserExtensionSync;
+    };
+  }, [items]);
 
   const applyTheme = (themeId: string) => {
     const theme = APP_THEMES.find(t => t.id === themeId);
@@ -360,14 +388,33 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current = 0;
     setIsDragOver(false);
 
     const files = e.dataTransfer.files;
+
     if (files.length > 0) {
       const file = files[0];
+      const filePath = (file as any).path;
+
+      // Check if it's a directory in Electron
+      if (filePath && (window as any).electronAPI?.isDirectory) {
+        try {
+          const isDir = await (window as any).electronAPI.isDirectory(filePath);
+          if (isDir) {
+            // It's a directory
+            setPendingDropFolder(filePath);
+            setIsFolderDropDialogOpen(true);
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to check if directory:', err);
+        }
+      }
+
+      // It's a file
       setPendingDropFile(file);
       setIsFileDropDialogOpen(true);
     }
@@ -381,16 +428,37 @@ const App: React.FC = () => {
 
     let path: string;
     let embeddedData: string | undefined;
+    let localPath: string | undefined;
+    // In Electron, file.path contains the actual file system path
+    const electronFilePath = (file as any).path;
     // Always set originalPath to the file name for display
-    const originalPath = (file as any).path || file.name;
+    const originalPath = electronFilePath || file.name;
 
     if (mode === 'embed') {
       // Embed file content as Base64
-      embeddedData = await fileManager.fileToBase64(file);
-      path = embeddedData; // Use data URL directly for viewing
+      try {
+        embeddedData = await fileManager.fileToBase64(file);
+        path = embeddedData; // Use data URL directly for viewing
+      } catch (error) {
+        console.error('[App] Failed to embed file, falling back to reference mode:', error);
+        // Fall back to reference mode
+        if (electronFilePath) {
+          localPath = electronFilePath;
+          path = electronFilePath;
+        } else {
+          path = URL.createObjectURL(file);
+        }
+      }
     } else {
-      // Reference mode - use blob URL for current session
-      path = URL.createObjectURL(file);
+      // Reference mode
+      if (electronFilePath) {
+        // In Electron, store the actual file path for persistence
+        localPath = electronFilePath;
+        path = electronFilePath; // Store actual path, will be loaded via IPC when needed
+      } else {
+        // Fallback for web environment - use blob URL (won't persist)
+        path = URL.createObjectURL(file);
+      }
     }
 
     // Create new resource from dropped file
@@ -401,6 +469,7 @@ const App: React.FC = () => {
       folderId: undefined,
       color: 'tag-blue',
       path,
+      localPath,
       embeddedData,
       originalPath,
       storageMode: mode,
@@ -419,6 +488,149 @@ const App: React.FC = () => {
   const handleFileDropClose = () => {
     setPendingDropFile(null);
     setIsFileDropDialogOpen(false);
+  };
+
+  // Handle folder drop confirmation
+  interface ScannedFile {
+    name: string;
+    path: string;
+    extension: string;
+    size: number;
+    mimeType: string;
+    modifiedAt: string;
+  }
+
+  interface FileClassification {
+    file: ScannedFile;
+    category?: string;
+    subfolder?: string;
+    suggestedTags?: string[];
+    confidence?: number;
+    reasoning?: string;
+    error?: string;
+  }
+
+  const handleFolderDropConfirm = async (files: ScannedFile[], mode: FileStorageMode, classifications?: FileClassification[]) => {
+    // Create a map for quick classification lookup
+    const classificationMap = new Map<string, FileClassification>();
+    if (classifications) {
+      classifications.forEach(c => classificationMap.set(c.file.path, c));
+    }
+
+    for (const file of files) {
+      const type = getResourceTypeFromExtension(file.extension);
+      const classification = classificationMap.get(file.path);
+
+      let path: string;
+      let embeddedData: string | undefined;
+      let localPath: string | undefined;
+
+      if (mode === 'embed') {
+        // Copy file to app storage
+        try {
+          if ((window as any).electronAPI?.copyFileToStorage) {
+            const result = await (window as any).electronAPI.copyFileToStorage(file.path, file.name);
+            if (result.success) {
+              localPath = result.targetPath;
+              path = result.targetPath;
+            } else {
+              // Fallback to reference mode
+              localPath = file.path;
+              path = file.path;
+            }
+          } else {
+            // No Electron API, use reference mode
+            localPath = file.path;
+            path = file.path;
+          }
+        } catch (error) {
+          console.error('[App] Failed to copy file:', file.name, error);
+          localPath = file.path;
+          path = file.path;
+        }
+      } else {
+        // Reference mode - just store the path
+        localPath = file.path;
+        path = file.path;
+      }
+
+      // Find or create folder based on classification
+      let folderId: string | undefined;
+      if (classification?.subfolder) {
+        // Check if folder exists, if not create it
+        const existingFolder = folders.find(f => f.name === classification.subfolder || f.name === classification.category);
+        if (existingFolder) {
+          folderId = existingFolder.id;
+        } else if (classification.category) {
+          // Create new folder based on category
+          const newFolder: Folder = {
+            id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: classification.category,
+            parentId: undefined
+          };
+          storageService.addFolder(newFolder);
+          setFolders(storageService.getFolders());
+          folderId = newFolder.id;
+        }
+      }
+
+      // Find or create tags based on classification
+      const itemTags: string[] = [];
+      if (classification?.suggestedTags && classification.suggestedTags.length > 0) {
+        for (const tagName of classification.suggestedTags) {
+          let existingTag = tags.find(t => t.name === tagName);
+          if (!existingTag) {
+            // Create new tag
+            existingTag = {
+              id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: tagName,
+              color: 'tag-purple'
+            };
+            storageService.addTag(existingTag);
+            setTags(storageService.getTags());
+          }
+          itemTags.push(existingTag.id);
+        }
+      }
+
+      // Create new resource with classification info
+      storageService.addItem({
+        title: file.name.replace(/\.[^/.]+$/, ''),
+        type,
+        tags: itemTags,
+        folderId,
+        color: 'tag-blue',
+        path,
+        localPath,
+        embeddedData,
+        originalPath: file.path,
+        storageMode: mode,
+        fileSize: file.size,
+        mimeType: file.mimeType,
+        isCloud: false,
+        isStarred: false,
+        contentSnippet: classification?.reasoning || `Imported from folder`
+      });
+    }
+
+    setItems(storageService.getItems());
+    setPendingDropFolder(null);
+    setIsFolderDropDialogOpen(false);
+  };
+
+  const handleFolderDropClose = () => {
+    setPendingDropFolder(null);
+    setIsFolderDropDialogOpen(false);
+  };
+
+  const getResourceTypeFromExtension = (ext: string): ResourceType => {
+    switch (ext.toLowerCase()) {
+      case '.pdf': return ResourceType.PDF;
+      case '.doc': case '.docx': return ResourceType.WORD;
+      case '.epub': return ResourceType.EPUB;
+      case '.jpg': case '.jpeg': case '.png': case '.gif': case '.webp': return ResourceType.IMAGE;
+      default: return ResourceType.UNKNOWN;
+    }
   };
 
   const getResourceTypeFromFile = (file: File): ResourceType => {
@@ -694,6 +906,13 @@ The content includes substantial information that would be valuable for referenc
         onConfirm={handleFileDropConfirm}
       />
 
+      <FolderDropDialog
+        isOpen={isFolderDropDialogOpen}
+        folderPath={pendingDropFolder}
+        onClose={handleFolderDropClose}
+        onConfirm={handleFolderDropConfirm}
+      />
+
       <TopBar
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
@@ -771,7 +990,7 @@ The content includes substantial information that would be valuable for referenc
               getTagName={getTagName}
             />
             {selectedItemId && (
-              <div className={`w-[350px] border-l hidden xl:block ${isLight ? 'border-gray-200' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>
+              <div className={`w-[350px] border-l hidden xl:block ${colorMode === 'light' ? 'border-gray-200' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>
                 <PreviewPane
                   item={selectedItem}
                   getTagName={getTagName}

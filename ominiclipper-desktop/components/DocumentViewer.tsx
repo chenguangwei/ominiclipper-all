@@ -1,13 +1,15 @@
 /**
  * Document Viewer Component
  * Renders PDF and EPUB documents in-app
+ * Uses Chromium's native PDF viewer for PDFs (no network dependency)
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ResourceItem, ResourceType } from '../types';
 import Icon from './Icon';
+import DocxViewer from './DocxViewer';
 import * as documentViewer from '../services/documentViewer';
-import { formatFileSize, getUsablePath } from '../services/fileManager';
+import { formatFileSize, getUsablePath, isElectron, readLocalFileAsDataUrl } from '../services/fileManager';
 
 interface DocumentViewerProps {
   item: ResourceItem;
@@ -15,7 +17,12 @@ interface DocumentViewerProps {
 }
 
 const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
+  // Use DocxViewer for Word documents
+  if (item.type === ResourceType.WORD) {
+    return <DocxViewer item={item} onClose={onClose} />;
+  }
   const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const viewerRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,19 +31,116 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
   const [toc, setToc] = useState<documentViewer.TocEntry[]>([]);
   const [showToc, setShowToc] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [useNativeViewer, setUseNativeViewer] = useState(false);
 
   // Get usable path (handles embedded data)
-  const documentPath = getUsablePath(item);
+  const rawDocumentPath = getUsablePath(item);
+  const [resolvedPath, setResolvedPath] = useState<string | null>(null);
 
   // Debug logging
-  console.log('DocumentViewer - documentPath:', documentPath?.substring(0, 50) + '...');
+  console.log('DocumentViewer - rawDocumentPath:', rawDocumentPath?.substring(0, 50) + '...');
   console.log('DocumentViewer - item.type:', item.type);
   console.log('DocumentViewer - item.storageMode:', item.storageMode);
+  console.log('DocumentViewer - item.localPath:', item.localPath);
+
+  // Resolve local file paths in Electron environment
+  useEffect(() => {
+    const resolvePath = async () => {
+      setError(null);
+
+      if (!rawDocumentPath) {
+        setResolvedPath(null);
+        setError('No document path available');
+        setIsLoading(false);
+        return;
+      }
+
+      // For PDF files, use native Chromium viewer via custom protocol or data URL
+      if (item.type === ResourceType.PDF) {
+        setUseNativeViewer(true);
+
+        // If it's a local file reference in Electron, use the custom protocol
+        if (item.storageMode === 'reference' && item.localPath && isElectron()) {
+          console.log('Using localfile protocol for PDF:', item.localPath);
+          // Use custom protocol: localfile:///path/to/file.pdf
+          const protocolUrl = `localfile://${item.localPath}`;
+          setResolvedPath(protocolUrl);
+          setIsLoading(false);
+          return;
+        }
+
+        // If it's embedded data (data URL), use directly
+        if (item.storageMode === 'embed' && item.embeddedData) {
+          console.log('Using embedded data URL for PDF');
+          setResolvedPath(item.embeddedData);
+          setIsLoading(false);
+          return;
+        }
+
+        // For other URLs (http, https), use directly
+        if (rawDocumentPath.startsWith('http://') || rawDocumentPath.startsWith('https://')) {
+          setResolvedPath(rawDocumentPath);
+          setIsLoading(false);
+          return;
+        }
+
+        // Fallback: try to read as data URL
+        if (item.localPath && isElectron()) {
+          const dataUrl = await readLocalFileAsDataUrl(item.localPath);
+          if (dataUrl) {
+            setResolvedPath(dataUrl);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        setError('Unable to resolve PDF path');
+        setIsLoading(false);
+        return;
+      }
+
+      // For EPUB and other documents, use the existing library-based approach
+      setUseNativeViewer(false);
+
+      // If it's a local file reference in Electron, read it as data URL
+      if (item.storageMode === 'reference' && item.localPath && isElectron()) {
+        console.log('Loading local file:', item.localPath);
+        setIsLoading(true);
+        const dataUrl = await readLocalFileAsDataUrl(item.localPath);
+        if (dataUrl) {
+          console.log('Local file loaded successfully, size:', dataUrl.length);
+          setResolvedPath(dataUrl);
+        } else {
+          console.error('Failed to load local file');
+          setResolvedPath(null);
+          setError('Failed to read local file. The file may have been moved or deleted.');
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      // For embedded data or other URLs, use as-is
+      console.log('Using raw document path directly');
+      setResolvedPath(rawDocumentPath);
+    };
+
+    resolvePath();
+  }, [rawDocumentPath, item.storageMode, item.localPath, item.type, item.embeddedData]);
 
   const loadDocument = useCallback(async () => {
-    if (!containerRef.current || !documentPath) {
-      setError('No document path available');
-      setIsLoading(false);
+    // For native viewer (PDF), we don't need to load via documentViewer service
+    if (useNativeViewer) {
+      console.log('Using native Chromium PDF viewer');
+      return;
+    }
+
+    if (!containerRef.current) {
+      return;
+    }
+
+    if (!resolvedPath) {
+      // Still waiting for path resolution
+      console.log('Waiting for path resolution...');
       return;
     }
 
@@ -44,11 +148,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
     setIsLoading(true);
     setError(null);
 
-    console.log('Loading document:', documentPath.substring(0, 50) + '...');
+    console.log('Loading document:', resolvedPath.substring(0, 100) + '...');
 
     try {
       const viewer = await documentViewer.renderDocument(
-        documentPath,
+        resolvedPath,
         item.type,
         container,
         {
@@ -74,7 +178,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
       if (viewer) {
         viewerRef.current = viewer;
         console.log('Document viewer initialized successfully');
-      } else if (!error) {
+      } else {
         setError('Failed to initialize document viewer');
         setIsLoading(false);
       }
@@ -83,17 +187,34 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
       setError(`Failed to load document: ${err}`);
       setIsLoading(false);
     }
-  }, [documentPath, item.type]);
+  }, [resolvedPath, item.type, useNativeViewer]);
 
+  // Load document when resolvedPath changes
   useEffect(() => {
-    loadDocument();
+    if (resolvedPath && !useNativeViewer) {
+      loadDocument();
+    }
 
     return () => {
       if (viewerRef.current) {
         viewerRef.current.cleanup();
+        viewerRef.current = null;
       }
     };
-  }, [loadDocument, retryCount]);
+  }, [resolvedPath, retryCount, useNativeViewer, loadDocument]);
+
+  // Handle iframe load event for native PDF viewer
+  const handleIframeLoad = useCallback(() => {
+    console.log('PDF iframe loaded successfully');
+    setIsLoading(false);
+  }, []);
+
+  // Handle iframe error
+  const handleIframeError = useCallback(() => {
+    console.error('PDF iframe failed to load');
+    setError('Failed to load PDF. The file may be corrupted or inaccessible.');
+    setIsLoading(false);
+  }, []);
 
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);
@@ -105,7 +226,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
     }
   };
 
-  if (!documentPath) {
+  if (!rawDocumentPath) {
     return (
       <div className="h-full flex items-center justify-center bg-[#1a1a1a] text-slate-400">
         <div className="text-center">
@@ -142,8 +263,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
           </span>
         </div>
 
-        {/* Navigation */}
-        {item.type === ResourceType.PDF && totalPages > 0 && (
+        {/* Navigation - only show for PDF.js rendered PDFs (not native viewer) */}
+        {item.type === ResourceType.PDF && totalPages > 0 && !useNativeViewer && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => viewerRef.current?.setPage?.(currentPage - 1)}
@@ -178,6 +299,18 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
               title="Table of Contents"
             >
               <Icon name="list" className="text-[20px]" />
+            </button>
+          )}
+          {/* Show in Folder - for local files */}
+          {item.localPath && isElectron() && (
+            <button
+              onClick={() => {
+                (window as any).electronAPI?.showItemInFolder(item.localPath);
+              }}
+              className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+              title="Show in Folder"
+            >
+              <Icon name="folder_open" className="text-[20px]" />
             </button>
           )}
           <a
@@ -223,9 +356,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
                   </button>
 
                   {/* Open externally - only for non-data URLs */}
-                  {documentPath && !documentPath.startsWith('data:') && (
+                  {resolvedPath && !resolvedPath.startsWith('data:') && !resolvedPath.startsWith('localfile:') && (
                     <a
-                      href={documentPath}
+                      href={resolvedPath}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
@@ -233,6 +366,19 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
                       <Icon name="open_in_new" className="text-[18px]" />
                       Open in External Viewer
                     </a>
+                  )}
+
+                  {/* Open with system app - for local files */}
+                  {item.localPath && isElectron() && (
+                    <button
+                      onClick={() => {
+                        (window as any).electronAPI?.openPath(item.localPath);
+                      }}
+                      className="w-full px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Icon name="open_in_new" className="text-[18px]" />
+                      Open with System App
+                    </button>
                   )}
 
                   {/* Close button */}
@@ -255,7 +401,20 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
             </div>
           )}
 
-          <div ref={containerRef} className="h-full" />
+          {/* Native PDF viewer using iframe (Chromium's built-in PDF viewer) */}
+          {useNativeViewer && resolvedPath && !error && (
+            <iframe
+              ref={iframeRef}
+              src={resolvedPath}
+              className="w-full h-full border-0"
+              title={item.title}
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          )}
+
+          {/* EPUB and other documents use the container */}
+          {!useNativeViewer && <div ref={containerRef} className="h-full" />}
         </div>
 
         {/* Table of Contents sidebar */}

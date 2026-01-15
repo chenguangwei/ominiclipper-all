@@ -410,17 +410,49 @@ export function exportFilePaths(items: ResourceItem[], format: 'txt' | 'csv' | '
 
 /**
  * Convert File to Base64 data URL
+ * Uses FileReader in browser, falls back to IPC in Electron
  */
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result); // Full data URL including mime type prefix
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
+export async function fileToBase64(file: File): Promise<string> {
+  // Check file size - for files over 10MB, warn and limit
+  const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+  if (file.size > MAX_SIZE) {
+    console.warn('[FileManager] File size exceeds limit, may cause memory issues');
+  }
+
+  // Try FileReader first (works in both browser and Electron renderer)
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result);
+      };
+      reader.onerror = (error) => {
+        console.error('[FileManager] FileReader error:', error);
+        reject(new Error('Failed to read file with FileReader'));
+      };
+      reader.onabort = () => {
+        reject(new Error('File reading was aborted'));
+      };
+      reader.readAsDataURL(file);
+    });
+  } catch (fileReaderError) {
+    // If FileReader fails in Electron, try IPC method
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.readFileAsDataUrl) {
+      try {
+        console.log('[FileManager] Falling back to IPC file read');
+        const result = await (window as any).electronAPI.readFileAsDataUrl(file.path || file.name);
+        if (result.success) {
+          return result.dataUrl;
+        }
+        throw new Error(result.error || 'IPC file read failed');
+      } catch (ipcError) {
+        console.error('[FileManager] IPC fallback also failed:', ipcError);
+        throw new Error('Failed to read file: ' + (ipcError instanceof Error ? ipcError.message : 'Unknown error'));
+      }
+    }
+    throw fileReaderError;
+  }
 }
 
 /**
@@ -470,6 +502,49 @@ export async function isBlobUrlValid(url: string): Promise<boolean> {
 }
 
 /**
+ * Check if running in Electron environment
+ */
+export function isElectron(): boolean {
+  return !!(window as any).electronAPI;
+}
+
+/**
+ * Read a local file and return as data URL (Electron only)
+ */
+export async function readLocalFileAsDataUrl(filePath: string): Promise<string | null> {
+  if (!isElectron()) {
+    return null;
+  }
+
+  try {
+    const result = await (window as any).electronAPI.readFileAsDataUrl(filePath);
+    if (result.success) {
+      return result.dataUrl;
+    }
+    console.error('Failed to read file:', result.error);
+    return null;
+  } catch (e) {
+    console.error('Error reading local file:', e);
+    return null;
+  }
+}
+
+/**
+ * Check if a local file exists (Electron only)
+ */
+export async function localFileExists(filePath: string): Promise<boolean> {
+  if (!isElectron()) {
+    return false;
+  }
+
+  try {
+    return await (window as any).electronAPI.fileExists(filePath);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get usable path from ResourceItem
  * Handles embedded data by returning the data URL directly
  */
@@ -479,6 +554,13 @@ export function getUsablePath(item: ResourceItem): string | undefined {
     return item.embeddedData;
   }
 
-  // Otherwise return the stored path
+  // For reference mode with localPath, we need to read the file through Electron API
+  // The actual reading will be done asynchronously in the viewer component
+  if (item.storageMode === 'reference' && item.localPath) {
+    // Return a special marker that indicates we need to load from local path
+    return `local-file://${item.localPath}`;
+  }
+
+  // Otherwise return the stored path (might be blob: URL which could be expired)
   return item.path;
 }

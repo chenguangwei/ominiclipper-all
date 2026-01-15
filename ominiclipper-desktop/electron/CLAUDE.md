@@ -7,5 +7,14 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #180 | 3:27 PM | 🔵 | Electron Version Verification | ~340 |
 | #166 | 3:14 PM | 🔵 | Electron Directory Structure Discovery | ~431 |
+| #165 | " | ✅ | Electron Main Process File Format Update | ~402 |
+
+### Jan 15, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #338 | 2:32 PM | 🟣 | Created local HTTP server for browser extension sync | ~333 |
+| #326 | 1:57 PM | 🟣 | Added showItemInFolder API to Electron preload | ~233 |
 </claude-mem-context>

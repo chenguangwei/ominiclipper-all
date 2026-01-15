@@ -345,3 +345,67 @@ export const importData = (jsonData: string): boolean => {
     return false;
   }
 };
+
+/**
+ * 从浏览器扩展导入数据（去重合并）
+ * @param jsonData 浏览器扩展导出的 JSON 数据
+ * @returns 导入的新项目数量
+ */
+export const importFromBrowserExtension = (jsonData: string): number => {
+  try {
+    const data = JSON.parse(jsonData);
+    const existingItems = getItems();
+    const existingIds = new Set(existingItems.map(i => i.id));
+
+    // 合并标签
+    if (data.tags && Array.isArray(data.tags)) {
+      const existingTags = getTags();
+      const existingTagIds = new Set(existingTags.map(t => t.id));
+      const newTags = data.tags.filter((tag: Tag) => !existingTagIds.has(tag.id));
+      saveTags([...newTags, ...existingTags]);
+    }
+
+    // 合并文件夹
+    if (data.folders && Array.isArray(data.folders)) {
+      const existingFolders = getFolders();
+      const existingFolderIds = new Set(existingFolders.map(f => f.id));
+      const newFolders = data.folders.filter((folder: Folder) => !existingFolderIds.has(folder.id));
+      saveFolders([...newFolders, ...existingFolders]);
+    }
+
+    // 合并项目（去重）
+    if (data.items && Array.isArray(data.items)) {
+      const newItems = data.items.filter((item: ResourceItem) => !existingIds.has(item.id));
+      // 标记从浏览器扩展导入的项目
+      const markedItems = newItems.map(item => ({
+        ...item,
+        source: 'browser-extension',
+        updatedAt: new Date().toISOString(),
+      }));
+      const allItems = [...markedItems, ...existingItems];
+      saveItems(allItems);
+      return newItems.length;
+    }
+
+    return 0;
+  } catch (e) {
+    console.error('Failed to import from browser extension:', e);
+    return 0;
+  }
+};
+
+/**
+ * 获取导入统计信息
+ */
+export const getImportStats = (jsonData: string): { items: number; tags: number; folders: number } | null => {
+  try {
+    const data = JSON.parse(jsonData);
+    return {
+      items: data.items?.length || 0,
+      tags: data.tags?.length || 0,
+      folders: data.folders?.length || 0,
+    };
+  } catch {
+    return null;
+  }
+};

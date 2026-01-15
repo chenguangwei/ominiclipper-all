@@ -1,7 +1,34 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import electron from 'vite-plugin-electron';
+import { resolve } from 'path';
+import { copyFileSync, mkdirSync, existsSync } from 'fs';
+
+// Plugin to copy electron CJS files to dist-electron
+function electronCopyPlugin() {
+  return {
+    name: 'electron-copy',
+    closeBundle: () => {
+      const mainSrc = resolve(__dirname, 'electron/main.cjs');
+      const preloadSrc = resolve(__dirname, 'electron/preload.js');
+      const httpServerSrc = resolve(__dirname, 'electron/httpServer.cjs');
+      const mainDestDir = resolve(__dirname, 'dist-electron/main');
+      const preloadDestDir = resolve(__dirname, 'dist-electron/preload');
+
+      if (!existsSync(mainDestDir)) mkdirSync(mainDestDir, { recursive: true });
+      if (!existsSync(preloadDestDir)) mkdirSync(preloadDestDir, { recursive: true });
+
+      copyFileSync(mainSrc, resolve(mainDestDir, 'main.cjs'));
+      // Copy preload.js as preload.cjs for CommonJS compatibility
+      copyFileSync(preloadSrc, resolve(preloadDestDir, 'preload.cjs'));
+      // Copy httpServer.cjs for browser extension sync
+      if (existsSync(httpServerSrc)) {
+        copyFileSync(httpServerSrc, resolve(mainDestDir, 'httpServer.cjs'));
+      }
+      console.log('Electron CJS files copied to dist-electron/');
+    }
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -16,24 +43,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      electron([
-        {
-          entry: 'electron/main.js',
-          vite: {
-            build: {
-              outDir: 'dist-electron/main'
-            }
-          }
-        },
-        {
-          entry: 'electron/preload.js',
-          vite: {
-            build: {
-              outDir: 'dist-electron/preload'
-            }
-          }
-        }
-      ])
+      electronCopyPlugin()
     ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

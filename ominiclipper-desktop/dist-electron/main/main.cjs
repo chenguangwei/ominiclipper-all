@@ -247,16 +247,6 @@ ipcMain.handle('fs:fileExists', async (event, filePath) => {
   }
 });
 
-// Check if a path is a directory
-ipcMain.handle('fs:isDirectory', async (event, filePath) => {
-  try {
-    const stats = fs.statSync(filePath);
-    return stats.isDirectory();
-  } catch {
-    return false;
-  }
-});
-
 ipcMain.handle('dialog:openFile', async (event, options) => {
   const result = await dialog.showOpenDialog(mainWindow, options);
   return result;

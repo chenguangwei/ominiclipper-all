@@ -3,13 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "dist-electron/main/main.js",
+  "main": "dist-electron/main/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build --mode electron",
+    "build": "vite build",
     "preview": "vite preview",
-    "electron": "cross-env NODE_ENV=development electron .",
-    "electron:dev": "vite",
+    "electron": "cross-env NODE_ENV=development electron ./dist-electron/main/main.cjs",
+    "electron:preview": "npm run build && cross-env NODE_ENV=production electron ./dist-electron/main/main.cjs",
     "electron:build": "npm run build && electron-builder",
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:win": "npm run build && electron-builder --win",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.39.3",
+    "docx-preview": "^0.3.7",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
@@ -24,7 +25,7 @@
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "cross-env": "^7.0.3",
-    "electron": "^33.0.0",
+    "electron": "^30.0.0",
     "electron-builder": "^26.0.0",
     "typescript": "~5.8.2",
     "vite": "^5.4.21",
@@ -39,7 +40,7 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "dist-electron/**/*",
       "public/**/*"
     ],
     "mac": {
