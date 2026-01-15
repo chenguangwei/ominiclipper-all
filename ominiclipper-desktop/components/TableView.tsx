@@ -13,6 +13,7 @@ interface TableViewProps {
   onEdit?: (item: ResourceItem) => void;
   sortType?: SortType;
   onSortChange?: (sort: SortType) => void;
+  onOpen?: (item: ResourceItem) => void;
 }
 
 const TableView: React.FC<TableViewProps> = ({
@@ -24,8 +25,15 @@ const TableView: React.FC<TableViewProps> = ({
   onEdit,
   sortType = 'date-desc',
   onSortChange,
+  onOpen,
 }) => {
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+
+  const handleDoubleClick = (item: ResourceItem) => {
+    if (onOpen) {
+      onOpen(item);
+    }
+  };
 
   const getIconForType = (type: ResourceType) => {
     switch (type) {
@@ -113,6 +121,7 @@ const TableView: React.FC<TableViewProps> = ({
                 <tr
                   key={item.id}
                   onClick={() => onSelect(item.id)}
+                  onDoubleClick={() => handleDoubleClick(item)}
                   onContextMenu={(e) => handleContextMenu(item.id, e)}
                   className={`table-row cursor-pointer ${selectedId === item.id ? 'bg-primary/20' : ''}`}
                 >

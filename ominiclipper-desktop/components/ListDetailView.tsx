@@ -12,6 +12,7 @@ interface ListDetailViewProps {
   sortType?: SortType;
   onSortChange?: (sort: SortType) => void;
   colorMode?: ColorMode;
+  onOpen?: (item: ResourceItem) => void;
 }
 
 const ListDetailView: React.FC<ListDetailViewProps> = ({
@@ -22,9 +23,16 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
   sortType = 'date-desc',
   onSortChange,
   colorMode = 'dark',
+  onOpen,
 }) => {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const isLight = colorMode === 'light';
+
+  const handleDoubleClick = (item: ResourceItem) => {
+    if (onOpen) {
+      onOpen(item);
+    }
+  };
 
   const getIconForType = (type: ResourceType) => {
     switch (type) {
@@ -172,6 +180,7 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
             <div
               key={item.id}
               onClick={() => onSelect(item.id)}
+              onDoubleClick={() => handleDoubleClick(item)}
               className={itemClass(selectedId === item.id)}
             >
               {isLight && selectedId === item.id && (

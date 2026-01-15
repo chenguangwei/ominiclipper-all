@@ -743,6 +743,54 @@ The content includes substantial information that would be valuable for referenc
     setDocumentViewerItem(item);
   };
 
+  // Open item based on type (document viewer, image viewer, or web link)
+  const handleOpenItem = async (item: ResourceItem) => {
+    // For web pages, open URL in browser
+    if (item.type === ResourceType.WEB && item.path) {
+      if ((window as any).electronAPI?.openExternal) {
+        (window as any).electronAPI.openExternal(item.path);
+      } else {
+        window.open(item.path, '_blank');
+      }
+      return;
+    }
+
+    // For images, try to open with system app first (same as View button)
+    if (item.type === ResourceType.IMAGE) {
+      const filePath = item.localPath || item.originalPath || item.path;
+      if (filePath && (window as any).electronAPI?.openPath) {
+        try {
+          await (window as any).electronAPI.openPath(filePath);
+          return; // Success, don't open viewer
+        } catch (error) {
+          console.error('Failed to open image with system app:', error);
+        }
+      }
+      // Fallback to document viewer
+      handleOpenDocument(item);
+      return;
+    }
+
+    // For documents (PDF/EPUB/WORD), open in document viewer
+    if (
+      item.type === ResourceType.PDF ||
+      item.type === ResourceType.EPUB ||
+      item.type === ResourceType.WORD
+    ) {
+      handleOpenDocument(item);
+      return;
+    }
+
+    // Fallback: try to open path directly
+    if (item.path) {
+      if ((window as any).electronAPI?.openExternal) {
+        (window as any).electronAPI.openExternal(item.path);
+      } else {
+        window.open(item.path, '_blank');
+      }
+    }
+  };
+
   // Close document viewer
   const handleCloseDocumentViewer = () => {
     setDocumentViewerItem(null);
@@ -965,6 +1013,7 @@ The content includes substantial information that would be valuable for referenc
           onOpenAuth={() => setIsAuthOpen(true)}
           onCreateFolder={() => setIsCreateFolderOpen(true)}
           onCreateTag={() => setIsCreateTagOpen(true)}
+          colorMode={colorMode}
           onDeleteFolder={handleDeleteFolder}
           onDeleteTag={handleDeleteTag}
         />
@@ -980,6 +1029,7 @@ The content includes substantial information that would be valuable for referenc
             onEdit={handleEditResource}
             sortType={sortType}
             onSortChange={setSortType}
+            onOpen={handleOpenItem}
           />
         ) : viewMode === ViewMode.GRID ? (
           <>
@@ -988,6 +1038,8 @@ The content includes substantial information that would be valuable for referenc
               selectedId={selectedItemId}
               onSelect={setSelectedItemId}
               getTagName={getTagName}
+              colorMode={colorMode}
+              onOpen={handleOpenItem}
             />
             {selectedItemId && (
               <div className={`w-[350px] border-l hidden xl:block ${colorMode === 'light' ? 'border-gray-200' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>
@@ -1016,6 +1068,7 @@ The content includes substantial information that would be valuable for referenc
               sortType={sortType}
               onSortChange={setSortType}
               colorMode={colorMode}
+              onOpen={handleOpenItem}
             />
             <div className="hidden md:flex flex-1">
               <PreviewPane

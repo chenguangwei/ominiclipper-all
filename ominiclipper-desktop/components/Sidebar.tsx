@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tag, Folder } from '../types';
+import { Tag, Folder, ColorMode } from '../types';
 import Icon from './Icon';
 
 interface SidebarProps {
@@ -17,6 +17,7 @@ interface SidebarProps {
   onCreateTag: () => void;
   onDeleteFolder: (id: string) => void;
   onDeleteTag: (id: string) => void;
+  colorMode?: ColorMode;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +35,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateTag,
   onDeleteFolder,
   onDeleteTag,
+  colorMode = 'dark',
 }) => {
+  const isLight = colorMode === 'light';
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
   const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
 
@@ -218,16 +221,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Folders */}
           <div className="mb-2">
             <div
-              className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-content-secondary group"
+              className={`flex items-center justify-between px-2 py-1 cursor-pointer transition-colors ${isLight ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100' : 'text-content-secondary hover:text-white hover:bg-surface-tertiary'} group`}
               onClick={(e) => toggleExpand('root-folders', e)}
             >
               <div className="flex items-center gap-2">
-                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-folders') ? 'rotate-90' : ''}`} />
-                <h3 className="text-[11px] font-medium">Folders ({folders.length})</h3>
+                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-folders') ? 'rotate-90' : ''} ${isLight ? '' : 'text-content-secondary'}`} />
+                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>Folders ({folders.length})</h3>
               </div>
               <Icon
                 name="create_new_folder"
-                className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white"
+                className={`text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer transition-colors ${isLight ? 'text-gray-500 hover:text-gray-800' : 'text-content-secondary hover:text-white'}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onCreateFolder();
@@ -242,16 +245,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Tags */}
           <div>
             <div
-              className="flex items-center justify-between px-2 py-1 cursor-pointer hover:text-white text-content-secondary group"
+              className={`flex items-center justify-between px-2 py-1 cursor-pointer transition-colors ${isLight ? 'text-gray-600 hover:text-gray-900 hover:bg-gray-100' : 'text-content-secondary hover:text-white hover:bg-surface-tertiary'} group`}
               onClick={(e) => toggleExpand('root-tags', e)}
             >
               <div className="flex items-center gap-2">
-                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-tags') ? 'rotate-90' : ''}`} />
-                <h3 className="text-[11px] font-medium">Tags ({tags.length})</h3>
+                <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-tags') ? 'rotate-90' : ''} ${isLight ? '' : 'text-content-secondary'}`} />
+                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>Tags ({tags.length})</h3>
               </div>
               <Icon
                 name="add"
-                className="text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-white"
+                className={`text-[14px] opacity-0 group-hover:opacity-100 cursor-pointer transition-colors ${isLight ? 'text-gray-500 hover:text-gray-800' : 'text-content-secondary hover:text-white'}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onCreateTag();

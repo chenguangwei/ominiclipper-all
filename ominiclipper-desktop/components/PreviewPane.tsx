@@ -51,7 +51,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   const canViewInDocument = (
     item.type === ResourceType.PDF ||
     item.type === ResourceType.EPUB ||
-    item.type === ResourceType.WORD
+    item.type === ResourceType.WORD ||
+    item.type === ResourceType.IMAGE
   ) && (item.path || item.embeddedData || item.localPath);
   // For document types, always show "View" button
   const shouldShowView = canViewInDocument && onOpenDocument;
@@ -109,6 +110,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     }
   };
 
+  // Open item (document, image, or web link)
   const handleOpen = () => {
     // For web pages, open URL in browser
     if (item.type === ResourceType.WEB && item.path) {
@@ -120,12 +122,41 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       return;
     }
 
+    // For images, try to open with system app, or fallback to document viewer
+    if (item.type === ResourceType.IMAGE) {
+      const filePath = item.localPath || item.originalPath || item.path;
+      if (filePath && (window as any).electronAPI?.openPath) {
+        try {
+          (window as any).electronAPI.openPath(filePath);
+          return;
+        } catch (error) {
+          console.error('Failed to open image:', error);
+        }
+      }
+      // Fallback: open in document viewer
+      if (onOpenDocument) {
+        onOpenDocument(item);
+      } else if (item.path) {
+        // Last resort: try to open directly
+        if ((window as any).electronAPI?.openExternal) {
+          (window as any).electronAPI.openExternal(item.path);
+        } else {
+          window.open(item.path, '_blank');
+        }
+      }
+      return;
+    }
+
     // For documents with viewer, open in viewer
     if (shouldShowView && onOpenDocument) {
       onOpenDocument(item);
     } else if (item.path) {
       // Fallback: try to open path directly
-      window.open(item.path, '_blank');
+      if ((window as any).electronAPI?.openExternal) {
+        (window as any).electronAPI.openExternal(item.path);
+      } else {
+        window.open(item.path, '_blank');
+      }
     }
   };
 
@@ -177,11 +208,11 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     : 'flex-1 bg-primary hover:bg-primary/90 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-primary/20';
 
   const secondaryButtonClass = isLight
-    ? 'px-4 bg-white hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-all border border-gray-200 flex items-center gap-2'
+    ? 'px-4 bg-white hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-all border border-gray-300 flex items-center gap-2 shadow-sm'
     : 'px-4 bg-surface-tertiary hover:bg-surface-tertiary/80 text-content font-medium py-2 rounded-lg transition-colors border border-[rgb(var(--color-border)/0.1)] flex items-center gap-2';
 
   const deleteButtonClass = isLight
-    ? 'px-4 bg-white hover:bg-red-50 text-gray-500 hover:text-red-500 font-medium py-2.5 rounded-lg transition-all border border-gray-200 flex items-center gap-2'
+    ? 'px-4 bg-white hover:bg-red-50 text-gray-500 hover:text-red-500 font-medium py-2.5 rounded-lg transition-all border border-gray-200 flex items-center gap-2 shadow-sm'
     : 'px-4 bg-surface-tertiary hover:bg-red-500/20 text-content hover:text-red-400 font-medium py-2 rounded-lg transition-colors border border-[rgb(var(--color-border)/0.1)] hover:border-red-500/30 flex items-center gap-2';
 
   return (
@@ -371,7 +402,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                 <div className="flex gap-3 mt-8">
                   <button
                     onClick={handleOpen}
-                    disabled={!item.path && !canViewInDocument}
+                    disabled={!item.path && !canViewInDocument && !item.embeddedData}
                     className={openButtonClass}
                   >
                     <Icon name={item.type === ResourceType.WEB ? "open_in_new" : shouldShowView ? "visibility" : "open_in_new"} />
