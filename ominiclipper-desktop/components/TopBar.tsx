@@ -10,6 +10,7 @@ interface TopBarProps {
   onAddClick: () => void;
   onSyncClick: () => void;
   onImportExportClick: () => void;
+  onSettingsClick: () => void;
   isSyncing?: boolean;
 }
 
@@ -21,6 +22,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onAddClick,
   onSyncClick,
   onImportExportClick,
+  onSettingsClick,
   isSyncing = false,
 }) => {
   return (
@@ -83,6 +85,13 @@ const TopBar: React.FC<TopBarProps> = ({
 
       {/* Action Buttons */}
       <div className="flex items-center gap-1">
+        <button
+          onClick={onSettingsClick}
+          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors"
+          title="Settings"
+        >
+          <Icon name="settings" />
+        </button>
         <button
           onClick={onImportExportClick}
           className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors"

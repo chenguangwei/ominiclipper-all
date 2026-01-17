@@ -14,6 +14,7 @@ import ImportExportDialog from './components/ImportExportDialog';
 import DocumentViewer from './components/DocumentViewer';
 import FileDropDialog from './components/FileDropDialog';
 import FolderDropDialog from './components/FolderDropDialog';
+import SettingsDialog from './components/SettingsDialog';
 import { APP_THEMES } from './constants';
 import { ViewMode, FilterState, ResourceItem, Tag, Folder, ResourceType, FileStorageMode, ColorMode } from './types';
 import Icon from './components/Icon';
@@ -21,6 +22,12 @@ import { getClient } from './supabaseClient';
 import * as storageService from './services/storageService';
 import * as fileManager from './services/fileManager';
 import { t, getLocale, setLocale, getAvailableLocales } from './services/i18n';
+
+// Settings storage keys
+const STORAGE_KEYS = {
+  COLOR_MODE: 'omniclipper_color_mode',
+  STORAGE_PATH: 'omniclipper_storage_path',
+};
 
 // Sorting types
 type SortType = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
@@ -81,6 +88,12 @@ const App: React.FC = () => {
   // Color mode state
   const [colorMode, setColorMode] = useState<ColorMode>(() => {
     return (localStorage.getItem('app_color_mode') as ColorMode) || 'dark';
+  });
+
+  // Settings dialog state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [customStoragePath, setCustomStoragePath] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.STORAGE_PATH);
   });
 
   // Initialize theme
@@ -427,7 +440,6 @@ const App: React.FC = () => {
     const type = getResourceTypeFromFile(file);
 
     let path: string;
-    let embeddedData: string | undefined;
     let localPath: string | undefined;
     // In Electron, file.path contains the actual file system path
     const electronFilePath = (file as any).path;
@@ -435,26 +447,33 @@ const App: React.FC = () => {
     const originalPath = electronFilePath || file.name;
 
     if (mode === 'embed') {
-      // Embed file content as Base64
-      try {
-        embeddedData = await fileManager.fileToBase64(file);
-        path = embeddedData; // Use data URL directly for viewing
-      } catch (error) {
-        console.error('[App] Failed to embed file, falling back to reference mode:', error);
-        // Fall back to reference mode
-        if (electronFilePath) {
+      // Copy file to app's storage directory (use custom path if set)
+      if (electronFilePath && (window as any).electronAPI?.copyFileToStorage) {
+        try {
+          const result = await (window as any).electronAPI.copyFileToStorage(electronFilePath, file.name, customStoragePath);
+          if (result.success) {
+            localPath = result.targetPath;
+            path = result.targetPath;
+            console.log('[App] File copied to storage:', result.targetPath);
+          } else {
+            throw new Error(result.error || 'Failed to copy file');
+          }
+        } catch (error) {
+          console.error('[App] Failed to copy file to storage, falling back to reference mode:', error);
+          // Fall back to reference mode
           localPath = electronFilePath;
           path = electronFilePath;
-        } else {
-          path = URL.createObjectURL(file);
         }
+      } else {
+        // No Electron API or no file path, use reference mode
+        localPath = electronFilePath;
+        path = electronFilePath || URL.createObjectURL(file);
       }
     } else {
-      // Reference mode
+      // Reference mode - store original path only
       if (electronFilePath) {
-        // In Electron, store the actual file path for persistence
         localPath = electronFilePath;
-        path = electronFilePath; // Store actual path, will be loaded via IPC when needed
+        path = electronFilePath;
       } else {
         // Fallback for web environment - use blob URL (won't persist)
         path = URL.createObjectURL(file);
@@ -470,7 +489,7 @@ const App: React.FC = () => {
       color: 'tag-blue',
       path,
       localPath,
-      embeddedData,
+      embeddedData: undefined, // No longer using Base64 for embed mode
       originalPath,
       storageMode: mode,
       fileSize: file.size,
@@ -522,14 +541,13 @@ const App: React.FC = () => {
       const classification = classificationMap.get(file.path);
 
       let path: string;
-      let embeddedData: string | undefined;
       let localPath: string | undefined;
 
       if (mode === 'embed') {
-        // Copy file to app storage
+        // Copy file to app storage (use custom path if set)
         try {
           if ((window as any).electronAPI?.copyFileToStorage) {
-            const result = await (window as any).electronAPI.copyFileToStorage(file.path, file.name);
+            const result = await (window as any).electronAPI.copyFileToStorage(file.path, file.name, customStoragePath);
             if (result.success) {
               localPath = result.targetPath;
               path = result.targetPath;
@@ -602,7 +620,7 @@ const App: React.FC = () => {
         color: 'tag-blue',
         path,
         localPath,
-        embeddedData,
+        embeddedData: undefined,
         originalPath: file.path,
         storageMode: mode,
         fileSize: file.size,
@@ -961,6 +979,22 @@ The content includes substantial information that would be valuable for referenc
         onConfirm={handleFolderDropConfirm}
       />
 
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        colorMode={colorMode}
+        onColorModeChange={applyColorMode}
+        storagePath={customStoragePath}
+        onStoragePathChange={(path) => {
+          setCustomStoragePath(path);
+          if (path) {
+            localStorage.setItem(STORAGE_KEYS.STORAGE_PATH, path);
+          } else {
+            localStorage.removeItem(STORAGE_KEYS.STORAGE_PATH);
+          }
+        }}
+      />
+
       <TopBar
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
@@ -970,6 +1004,7 @@ The content includes substantial information that would be valuable for referenc
         onSyncClick={syncItems}
         isSyncing={isSyncing}
         onImportExportClick={() => setIsImportExportOpen(true)}
+        onSettingsClick={() => setIsSettingsOpen(true)}
       />
 
       {/* Active Filters Bar */}

@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Directory operations
   scanDirectory: (dirPath, options) => ipcRenderer.invoke('fs:scanDirectory', dirPath, options),
   copyFileToStorage: (sourcePath, targetFileName) => ipcRenderer.invoke('fs:copyFileToStorage', sourcePath, targetFileName),
+  selectDirectory: (title) => ipcRenderer.invoke('dialog:selectDirectory', title),
 
   // Browser extension sync
   syncFromBrowserExtension: (item) => ipcRenderer.invoke('sync:browserExtension', item),

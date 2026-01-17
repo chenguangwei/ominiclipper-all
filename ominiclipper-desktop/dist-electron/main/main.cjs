@@ -357,10 +357,11 @@ ipcMain.handle('fs:scanDirectory', async (event, dirPath, options = {}) => {
 });
 
 // Copy file to app's document storage directory
-ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName) => {
+ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName, customStoragePath = null) => {
   try {
-    const userDataPath = app.getPath('userData');
-    const storagePath = path.join(userDataPath, 'documents');
+    // Use custom path if provided, otherwise use default userData path
+    const baseStoragePath = customStoragePath || app.getPath('userData');
+    const storagePath = path.join(baseStoragePath, 'OmniClipper', 'documents');
 
     // Ensure storage directory exists
     if (!fs.existsSync(storagePath)) {
@@ -386,6 +387,18 @@ ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName)
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// Select storage directory
+ipcMain.handle('dialog:selectDirectory', async (event, title = 'Select Storage Directory') => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title,
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, path: null };
+  }
+  return { success: true, path: result.filePaths[0] };
 });
 
 // Helper function to get MIME type from file extension
