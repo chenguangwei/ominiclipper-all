@@ -3,10 +3,52 @@
  * Enhanced with document content preview and light/dark mode support
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ResourceItem, ResourceType, ColorMode } from '../types';
 import Icon from './Icon';
 import { formatDate, formatRelativeTime } from '../services/i18n';
+import * as docxPreview from 'docx-preview';
+import Markdown from 'react-markdown';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker (required for PDF.js to work)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+/**
+ * Get the effective resource type, checking file extension for UNKNOWN types
+ */
+const getEffectiveType = (item: ResourceItem): ResourceType => {
+  if (item.type !== ResourceType.UNKNOWN) {
+    return item.type;
+  }
+
+  // For UNKNOWN types, check the file extension
+  const filePath = item.localPath || item.originalPath || item.path || '';
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+
+  switch (ext) {
+    case 'md':
+    case 'markdown':
+    case 'txt':
+      return ResourceType.MARKDOWN;
+    case 'pdf':
+      return ResourceType.PDF;
+    case 'doc':
+    case 'docx':
+      return ResourceType.WORD;
+    case 'epub':
+      return ResourceType.EPUB;
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'webp':
+      return ResourceType.IMAGE;
+    default:
+      return ResourceType.UNKNOWN;
+  }
+};
+
 
 interface PreviewPaneProps {
   item: ResourceItem | null;
@@ -33,6 +75,347 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'preview'>('details');
   const isLight = colorMode === 'light';
+
+  // Get the effective type for rendering (checks file extension for UNKNOWN types)
+  const effectiveType = item ? getEffectiveType(item) : ResourceType.UNKNOWN;
+
+  // Preview state
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  // Word document preview
+  const wordContainerRef = useRef<HTMLDivElement>(null);
+
+  // PDF preview
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+
+  // Markdown preview
+  const [markdownContent, setMarkdownContent] = useState<string | null>(null);
+
+  // Load preview when tab changes to preview
+  useEffect(() => {
+    if (activeTab !== 'preview' || !item) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const getDocumentUrl = async (itemEffectiveType: ResourceType): Promise<string | null> => {
+      console.log('getDocumentUrl called for item:', item.title, 'type:', itemEffectiveType);
+
+      // For embedded data
+      if (item.embeddedData) {
+        const mimeType = item.mimeType || 'application/octet-stream';
+        console.log('Using embedded data');
+        return `data:${mimeType};base64,${item.embeddedData}`;
+      }
+
+      // For local files in Electron
+      const filePath = item.localPath || item.originalPath || item.path;
+      console.log('File path:', filePath);
+
+      // For PDF and images, we need to read the file as data URL
+      if (filePath && (itemEffectiveType === ResourceType.PDF || itemEffectiveType === ResourceType.IMAGE)) {
+        if ((window as any).electronAPI?.readFileAsDataUrl) {
+          try {
+            console.log('Reading file as data URL...');
+            const result = await (window as any).electronAPI.readFileAsDataUrl(filePath);
+            if (result.success) {
+              console.log('File read successfully');
+              return result.dataUrl;
+            } else {
+              console.error('Failed to read file:', result.error);
+            }
+          } catch (e) {
+            console.error('Failed to read file:', e);
+          }
+        } else {
+          console.error('electronAPI.readFileAsDataUrl not available');
+        }
+      }
+
+      // Fallback to path (for web URLs)
+      if (item.path && (item.path.startsWith('http://') || item.path.startsWith('https://'))) {
+        console.log('Using web URL');
+        return item.path;
+      }
+
+      console.log('No URL available');
+      return null;
+    };
+
+    // Load Word document preview
+    const loadWordPreview = async () => {
+      const filePath = item.localPath || item.originalPath || item.path;
+      if (!filePath) {
+        setPreviewError('No document path available');
+        setPreviewLoading(false);
+        return;
+      }
+
+      try {
+        // Read file as ArrayBuffer via Electron API
+        if ((window as any).electronAPI?.readFile) {
+          const result = await (window as any).electronAPI.readFile(filePath);
+          if (result.success && result.buffer) {
+            // Convert base64 to ArrayBuffer
+            const binaryString = atob(result.buffer);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const arrayBuffer = bytes.buffer;
+
+            // Wait for container to be ready
+            const waitForContainer = async (maxAttempts = 10): Promise<HTMLDivElement | null> => {
+              for (let i = 0; i < maxAttempts; i++) {
+                if (wordContainerRef.current) {
+                  return wordContainerRef.current;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+              return null;
+            };
+
+            const container = await waitForContainer();
+            if (!container || !isMounted) {
+              if (isMounted) {
+                setPreviewError('Preview container not available');
+                setPreviewLoading(false);
+              }
+              return;
+            }
+
+            // Clear previous content
+            container.innerHTML = '';
+
+            // Render Word document
+            await docxPreview.renderAsync(arrayBuffer, container, undefined, {
+              className: 'docx-preview-content',
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              ignoreFonts: false,
+              breakPages: true,
+              ignoreLastRenderedPageBreak: true,
+              experimental: false,
+              trimXmlDeclaration: true,
+              useBase64URL: true,
+            });
+
+            if (isMounted) {
+              setPreviewLoading(false);
+            }
+          } else {
+            throw new Error(result.error || 'Failed to read file');
+          }
+        } else {
+          throw new Error('File reading not available');
+        }
+      } catch (error: any) {
+        console.error('Word preview error:', error);
+        if (isMounted) {
+          setPreviewError(error.message || 'Failed to load Word document');
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    // Load PDF preview (similar to Word - read file as ArrayBuffer and render)
+    const loadPdfPreview = async () => {
+      console.log('[PDF Preview] loadPdfPreview called');
+      console.log('[PDF Preview] pdfContainerRef.current:', pdfContainerRef.current);
+      console.log('[PDF Preview] isMounted:', isMounted);
+
+      // Wait for container to be ready BEFORE reading file
+      let container = pdfContainerRef.current;
+      let attempts = 0;
+      while (!container && attempts < 20 && isMounted) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        container = pdfContainerRef.current;
+        attempts++;
+        console.log(`[PDF Preview] Waiting for container, attempt ${attempts}:`, container);
+      }
+
+      console.log('[PDF Preview] After waiting, container:', container);
+
+      if (!container || !isMounted) {
+        if (isMounted) {
+          setPreviewError('Preview container not available');
+          setPreviewLoading(false);
+        }
+        return;
+      }
+
+      const filePath = item.localPath || item.originalPath || item.path;
+      if (!filePath) {
+        setPreviewError('No document path available');
+        setPreviewLoading(false);
+        return;
+      }
+
+      try {
+        // Read file as ArrayBuffer via Electron API (like Word does)
+        if ((window as any).electronAPI?.readFile) {
+          console.log('[PDF Preview] Reading file...');
+          const result = await (window as any).electronAPI.readFile(filePath);
+          if (result.success && result.buffer) {
+            console.log('[PDF Preview] File read successfully');
+            // Convert base64 to ArrayBuffer
+            const binaryString = atob(result.buffer);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const arrayBuffer = bytes.buffer;
+
+            // Clear previous content
+            container.innerHTML = '';
+            console.log('[PDF Preview] Container cleared, innerHTML:', container.innerHTML.length);
+
+            // Load PDF document
+            console.log('[PDF Preview] Loading PDF document...');
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+            console.log('[PDF Preview] PDF loaded, page count:', pdf.numPages);
+
+            // Render first page
+            const page = await pdf.getPage(1);
+            console.log('[PDF Preview] Page 1 loaded');
+            const viewport = page.getViewport({ scale: 1.5 });
+            console.log('[PDF Preview] Viewport:', viewport.width, 'x', viewport.height);
+
+            // Create canvas for rendering
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            // 添加背景色和边框以便调试
+            canvas.style.backgroundColor = '#ffffff';
+            canvas.style.border = '1px solid #e5e5e5';
+            canvas.style.display = 'block';
+            canvas.style.margin = '0 auto';
+            console.log('[PDF Preview] Canvas created:', canvas.width, 'x', canvas.height);
+
+            container.appendChild(canvas);
+            console.log('[PDF Preview] Canvas appended to container');
+            console.log('[PDF Preview] Container children count:', container.children.length);
+
+            // Render page to canvas
+            console.log('[PDF Preview] Starting page render...');
+            await page.render({
+              canvasContext: context!,
+              viewport: viewport,
+              canvas: canvas,
+            }).promise;
+
+            console.log('[PDF Preview] PDF first page rendered successfully');
+            console.log('[PDF Preview] Final container innerHTML length:', container.innerHTML.length);
+
+            if (isMounted) {
+              setPreviewLoading(false);
+            }
+          } else {
+            throw new Error(result.error || 'Failed to read file');
+          }
+        } else {
+          throw new Error('File reading not available');
+        }
+      } catch (error: any) {
+        console.error('PDF preview error:', error);
+        if (isMounted) {
+          setPreviewError(error.message || 'Failed to load PDF');
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    // Load Markdown preview
+    const loadMarkdownPreview = async () => {
+      const filePath = item.localPath || item.originalPath || item.path;
+      if (!filePath) {
+        setPreviewError('No file path available');
+        setPreviewLoading(false);
+        return;
+      }
+
+      try {
+        if ((window as any).electronAPI?.readFile) {
+          const result = await (window as any).electronAPI.readFile(filePath);
+          if (result.success && result.content) {
+            if (isMounted) {
+              setMarkdownContent(result.content);
+              setPreviewLoading(false);
+            }
+          } else {
+            throw new Error(result.error || 'Failed to read file');
+          }
+        } else {
+          throw new Error('File reading not available');
+        }
+      } catch (error: any) {
+        console.error('Markdown preview error:', error);
+        if (isMounted) {
+          setPreviewError(error.message || 'Failed to load Markdown');
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    const loadPreview = async () => {
+      setPreviewLoading(true);
+      setPreviewError(null);
+      setImageUrl(null);
+      setMarkdownContent(null);
+
+      // Get the effective type (checks file extension for UNKNOWN types)
+      const effectiveType = getEffectiveType(item);
+
+      try {
+        // Word, Markdown and PDF use direct file reading (like Word)
+        if (effectiveType === ResourceType.WORD) {
+          await loadWordPreview();
+        } else if (effectiveType === ResourceType.PDF) {
+          await loadPdfPreview();
+        } else if (effectiveType === ResourceType.MARKDOWN) {
+          await loadMarkdownPreview();
+        } else if (effectiveType === ResourceType.IMAGE) {
+          // Image uses data URL
+          const url = await getDocumentUrl(effectiveType);
+          if (isMounted) {
+            setImageUrl(url);
+            setPreviewLoading(false);
+          }
+        } else {
+          // EPUB and other types
+          if (isMounted) {
+            setPreviewLoading(false);
+          }
+        }
+      } catch (error: any) {
+        if (isMounted) {
+          setPreviewError(error.message || 'Failed to load preview');
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, item]);
+
+  // Manual reload function for retry button
+  const reloadPreview = () => {
+    if (item && activeTab === 'preview') {
+      // Force re-run by triggering state change
+      setPreviewError(null);
+      setPreviewLoading(true);
+      // The useEffect will handle the actual loading
+    }
+  };
 
   if (!item) {
     return (
@@ -180,8 +563,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     : 'text-content-secondary border-transparent hover:text-content';
 
   const headerBannerClass = isLight
-    ? 'w-full h-32 bg-gray-100 flex items-center justify-center select-none overflow-hidden'
-    : 'w-full h-32 bg-surface-tertiary flex items-center justify-center select-none overflow-hidden';
+    ? 'w-full h-32 bg-gray-100 flex items-center justify-center select-none overflow-hidden relative'
+    : 'w-full h-32 bg-surface-tertiary flex items-center justify-center select-none overflow-hidden relative';
 
   const gradientOverlayClass = isLight
     ? 'bg-gradient-to-t from-gray-100 via-transparent to-transparent'
@@ -444,9 +827,98 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
           </>
         ) : (
           // Preview Tab
-          <div className="p-6">
-            <h3 className={`text-sm font-semibold uppercase tracking-wide mb-4 ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>Content Preview</h3>
-            {item.type === ResourceType.WEB && item.path ? (
+          <div className="p-6 h-full flex flex-col">
+            {/* Loading State - for types that don't have their own loading UI */}
+            {previewLoading && effectiveType !== ResourceType.WORD && effectiveType !== ResourceType.PDF && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <div className={`animate-spin w-8 h-8 border-2 rounded-full mx-auto mb-3 ${isLight ? 'border-[#007aff] border-t-transparent' : 'border-primary border-t-transparent'}`}></div>
+                  <span className={`text-sm ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>Loading preview...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {previewError && !previewLoading && (
+              <div className={`rounded-lg p-6 text-center ${isLight ? 'bg-red-50 border border-red-200' : 'bg-red-500/10 border border-red-500/20'}`}>
+                <Icon name="error" className={`text-[48px] mb-3 ${isLight ? 'text-red-400' : 'text-red-400'}`} />
+                <p className={`text-sm ${isLight ? 'text-red-600' : 'text-red-400'}`}>{previewError}</p>
+                <button
+                  onClick={reloadPreview}
+                  className={`mt-4 px-4 py-2 rounded-lg text-sm font-medium ${isLight ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'}`}
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {/* PDF Preview - Canvas rendering (like Word) */}
+            {!previewError && effectiveType === ResourceType.PDF && (
+              <div className="flex-1 flex flex-col">
+                {previewLoading && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className={`animate-spin w-8 h-8 border-2 rounded-full mx-auto mb-3 ${isLight ? 'border-[#007aff] border-t-transparent' : 'border-primary border-t-transparent'}`}></div>
+                      <span className={`text-sm ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>Loading PDF...</span>
+                    </div>
+                  </div>
+                )}
+                <div
+                  ref={pdfContainerRef}
+                  className={`flex-1 rounded-lg overflow-auto p-4 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'} ${previewLoading ? 'hidden' : ''}`}
+                  style={{ minHeight: '400px' }}
+                >
+                  {/* PDF content rendered here by loadPdfPreview */}
+                </div>
+                {/* Open in Viewer button */}
+                {!previewLoading && shouldShowView && onOpenDocument && (
+                  <div className={`flex items-center justify-center gap-4 mt-4 py-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                    <button
+                      onClick={() => onOpenDocument(item)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}
+                    >
+                      <Icon name="fullscreen" className="text-base" />
+                      Full View
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Image Preview */}
+            {!previewLoading && !previewError && effectiveType === ResourceType.IMAGE && (
+              <div className="flex-1 flex flex-col">
+                <div className={`flex-1 rounded-lg p-4 flex items-center justify-center overflow-auto ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt={item.title}
+                      className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                      onError={() => setPreviewError('Failed to load image')}
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <Icon name="image" className={`text-[64px] opacity-20 ${isLight ? 'text-gray-400' : 'text-content-secondary'}`} />
+                      <p className={`text-sm mt-2 ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>Image not available</p>
+                    </div>
+                  )}
+                </div>
+                {(item.localPath || item.originalPath || item.path || onOpenDocument) && (
+                  <div className="flex justify-center mt-4">
+                    <button
+                      onClick={handleOpen}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}
+                    >
+                      <Icon name="fullscreen" className="text-base" />
+                      Open Full Size
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Web Link Preview */}
+            {!previewLoading && !previewError && effectiveType === ResourceType.WEB && (
               <div className="space-y-4">
                 <div className={`rounded-lg p-4 ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-surface-tertiary'}`}>
                   <p className={`text-xs mb-2 ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>URL</p>
@@ -454,8 +926,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                     href={item.path}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`text-sm break-all hover:underline ${isLight ? 'text-[#007aff]' : 'text-primary'}`}
+                    className={`text-sm break-all hover:underline flex items-center gap-2 ${isLight ? 'text-[#007aff]' : 'text-primary'}`}
                   >
+                    <Icon name="link" className="text-base flex-shrink-0" />
                     {item.path}
                   </a>
                 </div>
@@ -465,27 +938,125 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                     <p className={`text-sm ${isLight ? 'text-gray-700' : 'text-content'}`}>{item.contentSnippet}</p>
                   </div>
                 )}
+                <button
+                  onClick={handleOpen}
+                  className={`w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}
+                >
+                  <Icon name="open_in_new" className="text-base" />
+                  Open in Browser
+                </button>
               </div>
-            ) : item.type === ResourceType.IMAGE && item.path ? (
-              <div className="space-y-4">
-                <div className={`rounded-lg p-4 flex items-center justify-center min-h-[200px] ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-surface-tertiary'}`}>
-                  <img
-                    src={item.path}
-                    alt={item.title}
-                    className="max-w-full max-h-[300px] object-contain rounded-lg"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
+            )}
+
+            {/* EPUB Preview */}
+            {!previewLoading && !previewError && effectiveType === ResourceType.EPUB && (
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <div className={`text-center p-8 rounded-xl ${isLight ? 'bg-purple-50' : 'bg-purple-500/10'}`}>
+                  <Icon name="auto_stories" className={`text-[64px] mb-4 ${isLight ? 'text-purple-400' : 'text-epub-purple'}`} />
+                  <h4 className={`text-lg font-semibold mb-2 ${isLight ? 'text-gray-800' : 'text-white'}`}>{item.title}</h4>
+                  <p className={`text-sm mb-6 ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>
+                    EPUB files require the full reader for best experience
+                  </p>
+                  {shouldShowView && onOpenDocument && (
+                    <button
+                      onClick={() => onOpenDocument(item)}
+                      className={`px-6 py-3 rounded-lg text-sm font-medium flex items-center gap-2 mx-auto ${isLight ? 'bg-purple-500 text-white hover:bg-purple-600' : 'bg-epub-purple text-white hover:bg-epub-purple/80'}`}
+                    >
+                      <Icon name="menu_book" className="text-base" />
+                      Open in Reader
+                    </button>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className={`rounded-lg p-4 ${isLight ? 'bg-gray-50 border border-gray-200' : 'bg-surface-tertiary'}`}>
-                <p className={`text-sm ${isLight ? 'text-gray-600' : 'text-content-secondary'}`}>
-                  {canViewInDocument
-                    ? "Click 'View' to open the document in the built-in viewer."
-                    : "Preview not available. Click 'Open' to view the file."}
-                </p>
+            )}
+
+            {/* Word Document Preview */}
+            {!previewError && effectiveType === ResourceType.WORD && (
+              <div className="flex-1 flex flex-col">
+                {previewLoading && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className={`animate-spin w-8 h-8 border-2 rounded-full mx-auto mb-3 ${isLight ? 'border-[#007aff] border-t-transparent' : 'border-primary border-t-transparent'}`}></div>
+                      <span className={`text-sm ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>Loading Word document...</span>
+                    </div>
+                  </div>
+                )}
+                <div
+                  ref={wordContainerRef}
+                  className={`flex-1 rounded-lg p-4 overflow-auto ${isLight ? 'bg-white border border-gray-200' : 'bg-white'} ${previewLoading ? 'hidden' : ''}`}
+                  style={{ minHeight: '400px' }}
+                >
+                  {/* Word content will be rendered here by docx-preview */}
+                </div>
+                {!previewLoading && shouldShowView && onOpenDocument && (
+                  <div className={`flex items-center justify-center gap-4 mt-4 py-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                    <button
+                      onClick={() => onOpenDocument(item)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}
+                    >
+                      <Icon name="fullscreen" className="text-base" />
+                      Full View
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Markdown Preview */}
+            {!previewLoading && !previewError && effectiveType === ResourceType.MARKDOWN && (
+              <div className="flex-1 flex flex-col">
+                <div
+                  className={`flex-1 rounded-lg p-6 overflow-auto prose max-w-none ${
+                    isLight
+                      ? 'bg-white border border-gray-200 prose-gray'
+                      : 'bg-surface-tertiary prose-invert'
+                  }`}
+                  style={{ minHeight: '400px' }}
+                >
+                  {markdownContent ? (
+                    <div className="markdown-content">
+                      <Markdown>{markdownContent}</Markdown>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Icon name="article" className={`text-[48px] opacity-20 ${isLight ? 'text-gray-400' : 'text-content-secondary'}`} />
+                      <p className={`text-sm mt-2 ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>No content available</p>
+                    </div>
+                  )}
+                </div>
+                {shouldShowView && onOpenDocument && (
+                  <div className={`flex items-center justify-center gap-4 mt-4 py-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                    <button
+                      onClick={() => onOpenDocument(item)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}
+                    >
+                      <Icon name="fullscreen" className="text-base" />
+                      Full View
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Unknown/Other Type */}
+            {!previewLoading && !previewError && effectiveType === ResourceType.UNKNOWN && (
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <div className={`text-center p-8 rounded-xl ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                  <Icon name="insert_drive_file" className={`text-[64px] mb-4 opacity-30 ${isLight ? 'text-gray-400' : 'text-content-secondary'}`} />
+                  <h4 className={`text-lg font-semibold mb-2 ${isLight ? 'text-gray-800' : 'text-white'}`}>{item.title}</h4>
+                  <p className={`text-sm ${isLight ? 'text-gray-500' : 'text-content-secondary'}`}>
+                    Preview not available for this file type
+                  </p>
+                  {item.path && (
+                    <button
+                      onClick={handleOpen}
+                      className={`mt-6 px-6 py-3 rounded-lg text-sm font-medium flex items-center gap-2 mx-auto ${isLight ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-surface-tertiary text-content hover:bg-white/10'}`}
+                    >
+                      <Icon name="open_in_new" className="text-base" />
+                      Open with System App
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

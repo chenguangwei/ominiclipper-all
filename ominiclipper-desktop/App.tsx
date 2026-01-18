@@ -57,6 +57,7 @@ const App: React.FC = () => {
   // Dialog states
   const [isCreateResourceOpen, setIsCreateResourceOpen] = useState(false);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [defaultParentFolderId, setDefaultParentFolderId] = useState<string | undefined>(undefined);
   const [isCreateTagOpen, setIsCreateTagOpen] = useState(false);
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ResourceItem | null>(null);
@@ -854,6 +855,13 @@ The content includes substantial information that would be valuable for referenc
     setTags(storageService.getTags());
   };
 
+  // Quick add tag (returns the new tag for inline creation)
+  const handleQuickAddTag = (newTag: Omit<Tag, 'id'>): Tag => {
+    const created = storageService.addTag(newTag);
+    setTags(storageService.getTags());
+    return created;
+  };
+
   const handleDeleteTag = (id: string) => {
     const tag = tags.find(t => t.id === id);
     setConfirmDialog({
@@ -923,6 +931,7 @@ The content includes substantial information that would be valuable for referenc
         folders={folders}
         editItem={editingItem}
         colorMode={colorMode}
+        onCreateTag={handleQuickAddTag}
       />
 
       <CreateFolderDialog
@@ -930,11 +939,13 @@ The content includes substantial information that would be valuable for referenc
         onClose={() => {
           setIsCreateFolderOpen(false);
           setEditingFolder(null);
+          setDefaultParentFolderId(undefined);
         }}
         onSave={handleAddFolder}
         folders={folders}
         editFolder={editingFolder}
         colorMode={colorMode}
+        defaultParentId={defaultParentFolderId}
       />
 
       <CreateTagDialog
@@ -1046,7 +1057,20 @@ The content includes substantial information that would be valuable for referenc
           onSelectFolder={(f) => setFilterState(prev => ({ ...prev, folderId: f }))}
           user={user}
           onOpenAuth={() => setIsAuthOpen(true)}
-          onCreateFolder={() => setIsCreateFolderOpen(true)}
+          onCreateFolder={() => {
+            // 如果当前选中的是用户文件夹（不是特殊文件夹），自动设为父文件夹
+            const specialFolders = ['all', 'recent', 'starred', 'uncategorized', 'trash'];
+            if (!specialFolders.includes(filterState.folderId)) {
+              setDefaultParentFolderId(filterState.folderId);
+            } else {
+              setDefaultParentFolderId(undefined);
+            }
+            setIsCreateFolderOpen(true);
+          }}
+          onCreateSubfolder={(parentId) => {
+            setDefaultParentFolderId(parentId);
+            setIsCreateFolderOpen(true);
+          }}
           onCreateTag={() => setIsCreateTagOpen(true)}
           colorMode={colorMode}
           onDeleteFolder={handleDeleteFolder}

@@ -24,12 +24,11 @@ export const getItems = (): ResourceItem[] => {
     if (stored) {
       return JSON.parse(stored);
     }
-    // 首次加载使用 MOCK 数据并保存
-    saveItems(MOCK_ITEMS);
-    return MOCK_ITEMS;
+    // 首次加载返回空数组，不自动保存 MOCK 数据
+    return [];
   } catch (e) {
     console.error('Failed to load items:', e);
-    return MOCK_ITEMS;
+    return [];
   }
 };
 

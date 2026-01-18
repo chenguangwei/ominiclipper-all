@@ -9,6 +9,7 @@ interface CreateFolderDialogProps {
   folders: Folder[];
   editFolder?: Folder | null;
   colorMode: ColorMode;
+  defaultParentId?: string;
 }
 
 const ICON_OPTIONS = [
@@ -33,6 +34,7 @@ const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   folders,
   editFolder,
   colorMode,
+  defaultParentId,
 }) => {
   const isLight = colorMode === 'light';
   const [name, setName] = useState('');
@@ -46,10 +48,10 @@ const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       setIcon(editFolder.icon || 'folder');
     } else {
       setName('');
-      setParentId('');
+      setParentId(defaultParentId || '');
       setIcon('folder');
     }
-  }, [editFolder, isOpen]);
+  }, [editFolder, isOpen, defaultParentId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

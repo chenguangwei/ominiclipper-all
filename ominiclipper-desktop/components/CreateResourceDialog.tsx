@@ -10,6 +10,7 @@ interface CreateResourceDialogProps {
   folders: Folder[];
   editItem?: ResourceItem | null;
   colorMode: ColorMode;
+  onCreateTag?: (tag: Omit<Tag, 'id'>) => Tag;
 }
 
 const RESOURCE_TYPE_OPTIONS = [
@@ -30,6 +31,14 @@ const COLOR_OPTIONS = [
   { value: 'tag-purple', label: 'Purple', class: 'bg-[#9c27b0]' },
 ];
 
+const TAG_COLOR_OPTIONS = [
+  { value: 'tag-blue', class: 'bg-[#007aff]' },
+  { value: 'tag-green', class: 'bg-[#34c759]' },
+  { value: 'tag-orange', class: 'bg-[#ff9500]' },
+  { value: 'tag-red', class: 'bg-[#ff3b30]' },
+  { value: 'tag-purple', class: 'bg-[#9c27b0]' },
+];
+
 const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
   isOpen,
   onClose,
@@ -38,6 +47,7 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
   folders,
   editItem,
   colorMode,
+  onCreateTag,
 }) => {
   const isLight = colorMode === 'light';
 
@@ -49,6 +59,11 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
   const [folderId, setFolderId] = useState<string>('');
   const [color, setColor] = useState('tag-blue');
   const [isCloud, setIsCloud] = useState(false);
+
+  // Inline tag creation state
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('tag-blue');
 
   useEffect(() => {
     if (editItem) {
@@ -97,6 +112,33 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
         ? prev.filter(id => id !== tagId)
         : [...prev, tagId]
     );
+  };
+
+  const handleAddNewTag = () => {
+    if (!newTagName.trim() || !onCreateTag) return;
+
+    const newTag = onCreateTag({
+      name: newTagName.trim(),
+      color: newTagColor,
+    });
+
+    // Auto-select the newly created tag
+    setSelectedTags(prev => [...prev, newTag.id]);
+
+    // Reset inline form
+    setNewTagName('');
+    setNewTagColor('tag-blue');
+    setIsAddingTag(false);
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddNewTag();
+    } else if (e.key === 'Escape') {
+      setIsAddingTag(false);
+      setNewTagName('');
+    }
   };
 
   const renderFolderOptions = (parentId?: string, level: number = 0): React.ReactNode => {
@@ -293,6 +335,61 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
                   {tag.name}
                 </button>
               ))}
+
+              {/* Inline add tag */}
+              {onCreateTag && (
+                isAddingTag ? (
+                  <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+                    <input
+                      type="text"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyDown={handleTagInputKeyDown}
+                      placeholder="Tag name"
+                      autoFocus
+                      className={`w-20 px-1 py-0.5 text-xs bg-transparent border-none outline-none ${isLight ? 'text-gray-900 placeholder:text-gray-400' : 'text-white placeholder:text-content-secondary'}`}
+                    />
+                    {/* Color picker */}
+                    <div className="flex gap-0.5">
+                      {TAG_COLOR_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setNewTagColor(opt.value)}
+                          className={`w-3 h-3 rounded-full ${opt.class} ${newTagColor === opt.value ? 'ring-1 ring-offset-1 ring-white' : 'opacity-50 hover:opacity-100'}`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNewTag}
+                      disabled={!newTagName.trim()}
+                      className={`p-0.5 rounded ${isLight ? 'text-[#007aff] hover:bg-gray-200 disabled:text-gray-300' : 'text-primary hover:bg-white/10 disabled:text-content-secondary'}`}
+                    >
+                      <Icon name="check" className="text-sm" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingTag(false);
+                        setNewTagName('');
+                      }}
+                      className={`p-0.5 rounded ${isLight ? 'text-gray-400 hover:bg-gray-200' : 'text-content-secondary hover:bg-white/10'}`}
+                    >
+                      <Icon name="close" className="text-sm" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingTag(true)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs transition-all ${isLight ? 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700' : 'bg-surface-tertiary text-content-secondary hover:bg-surface-tertiary hover:text-white'}`}
+                  >
+                    <Icon name="add" className="text-sm" />
+                    New Tag
+                  </button>
+                )
+              )}
             </div>
           </div>
 

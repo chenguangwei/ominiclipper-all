@@ -60,6 +60,10 @@ export function getResourceTypeFromPath(path: string, mimeType?: string): Resour
     case 'html':
     case 'htm':
       return ResourceType.WEB;
+    case 'md':
+    case 'markdown':
+    case 'txt':
+      return ResourceType.MARKDOWN;
     default:
       return ResourceType.UNKNOWN;
   }
@@ -220,6 +224,7 @@ export function calculateFileStats(items: ResourceItem[]): FileStats {
       [ResourceType.EPUB]: 0,
       [ResourceType.WEB]: 0,
       [ResourceType.IMAGE]: 0,
+      [ResourceType.MARKDOWN]: 0,
       [ResourceType.UNKNOWN]: 0,
     },
   };

@@ -222,7 +222,19 @@ function createMenu() {
 ipcMain.handle('fs:readFile', async (event, filePath) => {
   try {
     const data = fs.readFileSync(filePath);
-    return { success: true, data: data.toString('base64'), mimeType: getMimeType(filePath) };
+    const mimeType = getMimeType(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+
+    // For text-based files, also return the text content
+    const textExtensions = ['.md', '.markdown', '.txt', '.json', '.xml', '.html', '.css', '.js', '.ts'];
+    const isTextFile = textExtensions.includes(ext);
+
+    return {
+      success: true,
+      buffer: data.toString('base64'),  // Always return base64 for binary compatibility
+      content: isTextFile ? data.toString('utf-8') : null,  // Return text content for text files
+      mimeType
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -360,7 +372,10 @@ ipcMain.handle('fs:scanDirectory', async (event, dirPath, options = {}) => {
 ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName, customStoragePath = null) => {
   try {
     // Use custom path if provided, otherwise use default userData path
-    const baseStoragePath = customStoragePath || app.getPath('userData');
+    const userDataPath = app.getPath('userData');
+    console.log('app.getPath("userData"):', userDataPath);
+
+    const baseStoragePath = customStoragePath || userDataPath;
     const storagePath = path.join(baseStoragePath, 'OmniClipper', 'documents');
 
     // Ensure storage directory exists
@@ -383,8 +398,15 @@ ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName,
     // Copy file
     fs.copyFileSync(sourcePath, targetPath);
 
-    return { success: true, targetPath, fileName: finalFileName };
+    // Use fs.realpathSync to get the canonical path with correct case on macOS
+    let finalTargetPath = fs.realpathSync(targetPath);
+
+    console.log('copyFileToStorage - targetPath:', targetPath);
+    console.log('copyFileToStorage - finalTargetPath:', finalTargetPath);
+
+    return { success: true, targetPath: finalTargetPath, fileName: finalFileName };
   } catch (error) {
+    console.error('copyFileToStorage error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -428,31 +450,44 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       stream: true,
-      bypassCSP: true
+      bypassCSP: true,
+      allowFileAccess: true
     }
   }
 ]);
 
 // App events
 app.whenReady().then(() => {
-  // Register the localfile protocol handler
-  protocol.handle('localfile', (request) => {
-    // URL format: localfile:///path/to/file
-    const url = request.url;
-    let filePath = url.replace('localfile://', '');
+  // Register the localfile protocol handler using registerFileProtocol (simpler API)
+  protocol.registerFileProtocol('localfile', (request, callback) => {
+    try {
+      // URL format: localfile:///absolute/path/to/file (3 slashes)
+      const url = request.url;
+      console.log('[localfile protocol] raw URL:', url);
 
-    // Decode URI components (handles spaces and special characters)
-    filePath = decodeURIComponent(filePath);
+      // 1. Remove protocol prefix - URL format is localfile:///Users/...
+      // After removing localfile://, the result should start with /Users/...
+      let filePath = url.replace('localfile://', '');
 
-    // On Windows, remove leading slash for absolute paths like /C:/...
-    if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1);
+      // 2. Ensure path starts with / for macOS absolute paths
+      if (!filePath.startsWith('/')) {
+        filePath = '/' + filePath;
+      }
+
+      // 3. Fix case: users -> Users (macOS path is case-insensitive but our logic needs consistency)
+      if (filePath.startsWith('/users/')) {
+        filePath = '/Users' + filePath.slice(6);
+      }
+
+      // 4. Normalize path for cross-platform compatibility
+      const finalPath = path.normalize(filePath);
+      console.log('[localfile protocol] final path:', finalPath);
+
+      callback({ path: finalPath });
+    } catch (error) {
+      console.error('[localfile protocol] error:', error);
+      callback({ error: -6 }); // FILE_NOT_FOUND
     }
-
-    console.log('localfile protocol request:', filePath);
-
-    // Use net.fetch to return the file
-    return net.fetch(pathToFileURL(filePath).href);
   });
 
   createWindow();

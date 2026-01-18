@@ -14,6 +14,7 @@ interface SidebarProps {
   user: any;
   onOpenAuth: () => void;
   onCreateFolder: () => void;
+  onCreateSubfolder: (parentId: string) => void;
   onCreateTag: () => void;
   onDeleteFolder: (id: string) => void;
   onDeleteTag: (id: string) => void;
@@ -25,18 +26,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   folders,
   activeTagId,
   onSelectTag,
-  activeColor,
-  onSelectColor,
+  activeColor: _activeColor,
+  onSelectColor: _onSelectColor,
   activeFolderId,
   onSelectFolder,
   user,
   onOpenAuth,
   onCreateFolder,
+  onCreateSubfolder,
   onCreateTag,
   onDeleteFolder,
   onDeleteTag,
   colorMode = 'dark',
 }) => {
+  void _activeColor;
+  void _onSelectColor;
   const isLight = colorMode === 'light';
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
   const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
@@ -308,6 +312,18 @@ const Sidebar: React.FC<SidebarProps> = ({
             className="fixed z-[201] bg-surface-tertiary border border-[rgb(var(--color-border)/0.1)] rounded-lg shadow-xl py-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
+            {contextMenu.type === 'folder' && (
+              <button
+                onClick={() => {
+                  onCreateSubfolder(contextMenu.id);
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content hover:bg-surface-tertiary transition-colors"
+              >
+                <Icon name="create_new_folder" className="text-lg" />
+                Create Subfolder
+              </button>
+            )}
             <button
               onClick={() => {
                 if (contextMenu.type === 'folder') {

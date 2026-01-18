@@ -4,6 +4,7 @@ export enum ResourceType {
   EPUB = 'EPUB',
   WEB = 'WEB',
   IMAGE = 'IMAGE',
+  MARKDOWN = 'MARKDOWN',
   UNKNOWN = 'UNKNOWN'
 }
 

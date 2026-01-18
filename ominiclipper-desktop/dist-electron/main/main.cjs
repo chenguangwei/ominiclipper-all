@@ -222,7 +222,19 @@ function createMenu() {
 ipcMain.handle('fs:readFile', async (event, filePath) => {
   try {
     const data = fs.readFileSync(filePath);
-    return { success: true, data: data.toString('base64'), mimeType: getMimeType(filePath) };
+    const mimeType = getMimeType(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+
+    // For text-based files, also return the text content
+    const textExtensions = ['.md', '.markdown', '.txt', '.json', '.xml', '.html', '.css', '.js', '.ts'];
+    const isTextFile = textExtensions.includes(ext);
+
+    return {
+      success: true,
+      buffer: data.toString('base64'),  // Always return base64 for binary compatibility
+      content: isTextFile ? data.toString('utf-8') : null,  // Return text content for text files
+      mimeType
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -437,14 +449,14 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   // Register the localfile protocol handler
   protocol.handle('localfile', (request) => {
-    // URL format: localfile:///path/to/file
+    // URL format: localfile:///absolute/path/to/file
     const url = request.url;
-    let filePath = url.replace('localfile://', '');
+    let filePath = url.replace('localfile:///', '');
 
     // Decode URI components (handles spaces and special characters)
     filePath = decodeURIComponent(filePath);
 
-    // On Windows, remove leading slash for absolute paths like /C:/...
+    // On Windows, convert /C:/... to C:\...
     if (process.platform === 'win32' && filePath.startsWith('/')) {
       filePath = filePath.slice(1);
     }
