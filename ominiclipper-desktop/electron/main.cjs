@@ -440,6 +440,509 @@ function getMimeType(filePath) {
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
+// ============================================
+// JSON File Storage System
+// ============================================
+
+// Get storage paths
+function getStoragePaths() {
+  const userDataPath = app.getPath('userData');
+  const basePath = path.join(userDataPath, 'OmniClipper');
+  return {
+    base: basePath,
+    data: path.join(basePath, 'data'),
+    backups: path.join(basePath, 'backups'),
+    libraryFile: path.join(basePath, 'data', 'library.json'),
+    settingsFile: path.join(basePath, 'data', 'settings.json'),
+  };
+}
+
+// Ensure storage directories exist
+function ensureStorageDirectories() {
+  const paths = getStoragePaths();
+  [paths.data, paths.backups].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+}
+
+// Create backup of library.json (keep last 5)
+function createLibraryBackup() {
+  const paths = getStoragePaths();
+  if (!fs.existsSync(paths.libraryFile)) return;
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFile = path.join(paths.backups, `library-${timestamp}.json`);
+
+  try {
+    fs.copyFileSync(paths.libraryFile, backupFile);
+    console.log('[Storage] Created backup:', backupFile);
+
+    // Clean old backups (keep last 5)
+    const backups = fs.readdirSync(paths.backups)
+      .filter(f => f.startsWith('library-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+
+    if (backups.length > 5) {
+      backups.slice(5).forEach(oldBackup => {
+        const oldPath = path.join(paths.backups, oldBackup);
+        fs.unlinkSync(oldPath);
+        console.log('[Storage] Removed old backup:', oldBackup);
+      });
+    }
+  } catch (error) {
+    console.error('[Storage] Backup failed:', error);
+  }
+}
+
+// ============================================
+// File Storage System (Eagle-style structure)
+// ============================================
+
+function getFileStoragePaths() {
+  const userDataPath = app.getPath('userData');
+  const basePath = path.join(userDataPath, 'OmniClipper');
+  return {
+    base: basePath,
+    files: path.join(basePath, 'files'),
+  };
+}
+
+ipcMain.handle('fileStorage:getStoragePath', () => {
+  const paths = getFileStoragePaths();
+  if (!fs.existsSync(paths.files)) {
+    fs.mkdirSync(paths.files, { recursive: true });
+  }
+  return paths.files;
+});
+
+ipcMain.handle('fileStorage:createItemStorage', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  try {
+    if (!fs.existsSync(itemDir)) {
+      fs.mkdirSync(itemDir, { recursive: true });
+    }
+    return { success: true, path: itemDir };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:saveFileToStorage', async (event, itemId, fileName, base64Data) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  const filePath = path.join(itemDir, fileName);
+  try {
+    if (!fs.existsSync(itemDir)) {
+      fs.mkdirSync(itemDir, { recursive: true });
+    }
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    return { success: true, path: filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:readFileFromStorage', async (event, itemId, fileName) => {
+  const paths = getFileStoragePaths();
+  const filePath = path.join(paths.files, itemId, fileName);
+  try {
+    const data = fs.readFileSync(filePath);
+    const mimeType = getMimeType(fileName);
+    const base64 = data.toString('base64');
+    return { success: true, dataUrl: `data:${mimeType};base64,${base64}` };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:getFilePath', async (event, itemId, fileName) => {
+  const paths = getFileStoragePaths();
+  return path.join(paths.files, itemId, fileName);
+});
+
+ipcMain.handle('fileStorage:deleteItemStorage', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  try {
+    if (fs.existsSync(itemDir)) {
+      fs.rmSync(itemDir, { recursive: true, force: true });
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:saveItemMetadata', async (event, itemId, metadata) => {
+  const paths = getFileStoragePaths();
+  const metadataPath = path.join(paths.files, itemId, 'metadata.json');
+  try {
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:readItemMetadata', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const metadataPath = path.join(paths.files, itemId, 'metadata.json');
+  try {
+    if (!fs.existsSync(metadataPath)) return null;
+    const content = fs.readFileSync(metadataPath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ============================================
+// MTime Tracking System (Eagle-style mtime.json)
+// ============================================
+
+function getMTimeFilePath() {
+  const paths = getStoragePaths();
+  return path.join(paths.data, 'mtime.json');
+}
+
+ipcMain.handle('mtime:readMTime', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) {
+      return { times: {}, count: 0, lastModified: new Date().toISOString() };
+    }
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    const count = data.all || Object.keys(data).filter(k => k !== 'all').length;
+    return { times: data, count, lastModified: new Date().toISOString() };
+  } catch (error) {
+    return { times: {}, count: 0, lastModified: new Date().toISOString() };
+  }
+});
+
+ipcMain.handle('mtime:updateMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  ensureStorageDirectories();
+  try {
+    let data = {};
+    if (fs.existsSync(mtimePath)) {
+      try { data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8')); } catch (e) { data = {}; }
+    }
+    data[itemId] = Date.now();
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:setMTime', async (event, itemId, timestamp) => {
+  const mtimePath = getMTimeFilePath();
+  ensureStorageDirectories();
+  try {
+    let data = {};
+    if (fs.existsSync(mtimePath)) {
+      try { data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8')); } catch (e) { data = {}; }
+    }
+    data[itemId] = timestamp;
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:removeMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return { success: true };
+    let data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8'));
+    delete data[itemId];
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:getMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return null;
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    return data[itemId] || null;
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle('mtime:getAll', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return {};
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    const { all, ...times } = data;
+    return times;
+  } catch (error) {
+    return {};
+  }
+});
+
+ipcMain.handle('mtime:getCount', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return 0;
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    return data.all || Object.keys(data).filter(k => k !== 'all').length;
+  } catch (error) {
+    return 0;
+  }
+});
+
+// ============================================
+// Backup System (Eagle-style)
+// ============================================
+
+function getBackupPaths() {
+  const paths = getStoragePaths();
+  return { backupDir: path.join(paths.base, 'backups') };
+}
+
+ipcMain.handle('backup:createBackup', async (event, data) => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\./g, '-').replace('T', ' ').split(' ')[0] + ' ' + now.toTimeString().split(' ')[0].replace(/:/g, '.');
+    const backupFile = path.join(backupDir, `backup-${timestamp}.${Date.now()}.json`);
+    fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true, path: backupFile };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:listBackups', async () => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) return [];
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup-') && f.endsWith('.json')).sort().reverse();
+    return files.map(fileName => {
+      const filePath = path.join(backupDir, fileName);
+      const stats = fs.statSync(filePath);
+      let timestamp = new Date();
+      const match = fileName.match(/backup-(.+)\.\d+\.json/);
+      if (match && match[1]) { try { timestamp = new Date(match[1].replace(' ', 'T')); } catch (e) {} }
+      let itemCount = 0;
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const d = JSON.parse(content);
+        itemCount = d._backupInfo?.itemCount || d.items?.length || 0;
+      } catch (e) {}
+      return { path: filePath, fileName, timestamp, size: stats.size, itemCount };
+    });
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle('backup:restoreBackup', async (event, backupPath) => {
+  try {
+    if (!fs.existsSync(backupPath)) return { success: false, error: 'Backup file not found' };
+    const content = fs.readFileSync(backupPath, 'utf-8');
+    const data = JSON.parse(content);
+    const { _backupInfo, ...restoreData } = data;
+    return { success: true, data: restoreData };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:deleteBackup', async (event, backupPath) => {
+  try {
+    if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:cleanupOldBackups', async (event, keepCount = 30) => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) return { deleted: 0 };
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup-') && f.endsWith('.json')).sort().reverse();
+    if (files.length <= keepCount) return { deleted: 0 };
+    const toDelete = files.slice(keepCount);
+    let deleted = 0;
+    for (const fileName of toDelete) {
+      const filePath = path.join(backupDir, fileName);
+      try { fs.unlinkSync(filePath); deleted++; } catch (e) { console.error('Failed to delete backup:', filePath); }
+    }
+    return { deleted };
+  } catch (error) {
+    return { deleted: 0, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:getBackupPath', async () => {
+  const { backupDir } = getBackupPaths();
+  ensureStorageDirectories();
+  return backupDir;
+});
+
+// Get data directory path
+ipcMain.handle('storage:getDataPath', () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+  return paths.data;
+});
+
+// Read library.json
+ipcMain.handle('storage:readLibrary', async () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    if (!fs.existsSync(paths.libraryFile)) {
+      console.log('[Storage] library.json not found, returning null');
+      return null;
+    }
+
+    const content = fs.readFileSync(paths.libraryFile, 'utf-8');
+    const data = JSON.parse(content);
+    console.log('[Storage] Loaded library.json, items:', data.items?.length || 0);
+    return data;
+  } catch (error) {
+    console.error('[Storage] Failed to read library.json:', error);
+    return null;
+  }
+});
+
+// Write library.json (with auto-backup)
+ipcMain.handle('storage:writeLibrary', async (event, data) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Create backup before overwriting (if file exists)
+    if (fs.existsSync(paths.libraryFile)) {
+      createLibraryBackup();
+    }
+
+    // Update lastModified timestamp
+    data.lastModified = new Date().toISOString();
+
+    // Write atomically: write to temp file first, then rename
+    const tempFile = paths.libraryFile + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, paths.libraryFile);
+
+    console.log('[Storage] Saved library.json, items:', data.items?.length || 0);
+    return { success: true };
+  } catch (error) {
+    console.error('[Storage] Failed to write library.json:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Read settings.json
+ipcMain.handle('storage:readSettings', async () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    if (!fs.existsSync(paths.settingsFile)) {
+      console.log('[Storage] settings.json not found, returning null');
+      return null;
+    }
+
+    const content = fs.readFileSync(paths.settingsFile, 'utf-8');
+    const data = JSON.parse(content);
+    console.log('[Storage] Loaded settings.json');
+    return data;
+  } catch (error) {
+    console.error('[Storage] Failed to read settings.json:', error);
+    return null;
+  }
+});
+
+// Write settings.json
+ipcMain.handle('storage:writeSettings', async (event, data) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Write atomically
+    const tempFile = paths.settingsFile + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, paths.settingsFile);
+
+    console.log('[Storage] Saved settings.json');
+    return { success: true };
+  } catch (error) {
+    console.error('[Storage] Failed to write settings.json:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Migrate data from localStorage to JSON files
+ipcMain.handle('storage:migrate', async (event, legacyData) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Create library.json from legacy data
+    const libraryData = {
+      version: 1,
+      lastModified: new Date().toISOString(),
+      items: legacyData.items || [],
+      tags: legacyData.tags || [],
+      folders: legacyData.folders || [],
+    };
+
+    // Create settings.json from legacy data
+    const settingsData = {
+      version: 1,
+      colorMode: legacyData.colorMode || 'dark',
+      themeId: legacyData.themeId || 'blue',
+      locale: legacyData.locale || 'en',
+      customStoragePath: legacyData.storagePath || null,
+      viewMode: legacyData.viewMode || 'list',
+      filterState: legacyData.filterState || { search: '', tagId: null, folderId: 'all' },
+      recentFiles: legacyData.recentFiles || [],
+      favoriteFolders: legacyData.favoriteFolders || [],
+    };
+
+    // Write both files
+    fs.writeFileSync(paths.libraryFile, JSON.stringify(libraryData, null, 2), 'utf-8');
+    fs.writeFileSync(paths.settingsFile, JSON.stringify(settingsData, null, 2), 'utf-8');
+
+    console.log('[Storage] Migration completed successfully');
+    console.log('[Storage] - Items:', libraryData.items.length);
+    console.log('[Storage] - Tags:', libraryData.tags.length);
+    console.log('[Storage] - Folders:', libraryData.folders.length);
+
+    return { success: true, libraryData, settingsData };
+  } catch (error) {
+    console.error('[Storage] Migration failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Register custom protocol for local file access
 // This allows the renderer to access local files via localfile:// URLs
 protocol.registerSchemesAsPrivileged([

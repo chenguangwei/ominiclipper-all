@@ -8,8 +8,6 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #180 | 3:27 PM | 🔵 | Electron Version Verification | ~340 |
-| #166 | 3:14 PM | 🔵 | Electron Directory Structure Discovery | ~431 |
-| #165 | " | ✅ | Electron Main Process File Format Update | ~402 |
 
 ### Jan 15, 2026
 

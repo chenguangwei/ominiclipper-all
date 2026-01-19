@@ -23,22 +23,19 @@ import * as storageService from './services/storageService';
 import * as fileManager from './services/fileManager';
 import { t, getLocale, setLocale, getAvailableLocales } from './services/i18n';
 
-// Settings storage keys
-const STORAGE_KEYS = {
-  COLOR_MODE: 'omniclipper_color_mode',
-  STORAGE_PATH: 'omniclipper_storage_path',
-};
-
 // Sorting types
 type SortType = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
 
 const App: React.FC = () => {
+  // Storage initialization state
+  const [isStorageReady, setIsStorageReady] = useState(false);
+
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LIST_DETAIL);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [items, setItems] = useState<ResourceItem[]>(() => storageService.getItems());
-  const [tags, setTags] = useState<Tag[]>(() => storageService.getTags());
-  const [folders, setFolders] = useState<Folder[]>(() => storageService.getFolders());
+  const [items, setItems] = useState<ResourceItem[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [filterState, setFilterState] = useState<FilterState>({
     search: '',
     tagId: null,
@@ -87,31 +84,51 @@ const App: React.FC = () => {
   const [isFolderDropDialogOpen, setIsFolderDropDialogOpen] = useState(false);
 
   // Color mode state
-  const [colorMode, setColorMode] = useState<ColorMode>(() => {
-    return (localStorage.getItem('app_color_mode') as ColorMode) || 'dark';
-  });
+  const [colorMode, setColorModeState] = useState<ColorMode>('dark');
 
   // Settings dialog state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [customStoragePath, setCustomStoragePath] = useState<string | null>(() => {
-    return localStorage.getItem(STORAGE_KEYS.STORAGE_PATH);
-  });
+  const [customStoragePath, setCustomStoragePath] = useState<string | null>(null);
 
-  // Initialize theme
+  // Initialize storage service (async)
   useEffect(() => {
-    const savedThemeId = localStorage.getItem('app_theme_id') || 'blue';
-    applyTheme(savedThemeId);
+    const initApp = async () => {
+      console.log('[App] Initializing storage...');
+      await storageService.initStorage();
+
+      // Load data from storage after initialization
+      setItems(storageService.getItems());
+      setTags(storageService.getTags());
+      setFolders(storageService.getFolders());
+
+      // Load settings
+      const settings = storageService.getSettings();
+      setColorModeState(settings.colorMode as ColorMode);
+      setCurrentThemeId(settings.themeId);
+      setCustomStoragePath(settings.customStoragePath);
+
+      // Apply theme and color mode (internal versions, don't save back)
+      applyThemeInternal(settings.themeId);
+      applyColorModeInternal(settings.colorMode as ColorMode);
+
+      setIsStorageReady(true);
+      console.log('[App] Storage initialized successfully');
+    };
+
+    initApp();
+
+    // Cleanup: flush pending writes on unmount
+    return () => {
+      storageService.flushPendingWrites();
+    };
   }, []);
 
-  // Initialize color mode
+  // Listen for system preference changes (color mode)
   useEffect(() => {
-    applyColorMode(colorMode);
-
-    // Listen for system preference changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
       if (colorMode === 'system') {
-        applyColorMode('system');
+        applyColorModeInternal('system');
       }
     };
     mediaQuery.addEventListener('change', handleChange);
@@ -127,7 +144,7 @@ const App: React.FC = () => {
   // Handle browser extension sync
   useEffect(() => {
     // Expose sync handler to window for Electron IPC callbacks
-    (window as any).handleBrowserExtensionSync = (item: ResourceItem) => {
+    (window as any).handleBrowserExtensionSync = async (item: ResourceItem) => {
       console.log('[App] Received sync from browser extension:', item.title);
 
       // Check if item already exists
@@ -139,8 +156,9 @@ const App: React.FC = () => {
 
       // Add item to state and storage
       const newItems = [item, ...items];
-      setItems(newItems);
       storageService.saveItems(newItems);
+      await storageService.flushPendingWrites();
+      setItems([...storageService.getItems()]);
       console.log('[App] Synced item from browser extension:', item.title);
     };
 
@@ -149,16 +167,23 @@ const App: React.FC = () => {
     };
   }, [items]);
 
-  const applyTheme = (themeId: string) => {
+  // Internal function to apply theme CSS without saving
+  const applyThemeInternal = (themeId: string) => {
     const theme = APP_THEMES.find(t => t.id === themeId);
     if (theme) {
       document.documentElement.style.setProperty('--color-primary', theme.rgb);
-      setCurrentThemeId(themeId);
-      localStorage.setItem('app_theme_id', themeId);
     }
   };
 
-  const applyColorMode = (mode: ColorMode) => {
+  // Apply theme and save to storage
+  const applyTheme = (themeId: string) => {
+    applyThemeInternal(themeId);
+    setCurrentThemeId(themeId);
+    storageService.setThemeId(themeId);
+  };
+
+  // Internal function to apply color mode CSS without saving
+  const applyColorModeInternal = (mode: ColorMode) => {
     const html = document.documentElement;
     let effectiveMode = mode;
 
@@ -173,9 +198,13 @@ const App: React.FC = () => {
       html.classList.remove('dark');
       html.classList.add('light');
     }
+  };
 
-    setColorMode(mode);
-    localStorage.setItem('app_color_mode', mode);
+  // Apply color mode and save to storage
+  const applyColorMode = (mode: ColorMode) => {
+    applyColorModeInternal(mode);
+    setColorModeState(mode);
+    storageService.setColorMode(mode);
   };
 
   // Keyboard shortcuts (general)
@@ -500,7 +529,10 @@ const App: React.FC = () => {
       contentSnippet: `Imported from ${file.name}`
     });
 
-    setItems(storageService.getItems());
+    // Force flush pending writes and refresh state immediately
+    // Create a new array reference to ensure React detects the change
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
     setPendingDropFile(null);
     setIsFileDropDialogOpen(false);
   };
@@ -632,7 +664,10 @@ const App: React.FC = () => {
       });
     }
 
-    setItems(storageService.getItems());
+    // Force flush pending writes and refresh state immediately
+    // Create a new array reference to ensure React detects the change
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
     setPendingDropFolder(null);
     setIsFolderDropDialogOpen(false);
   };
@@ -664,30 +699,33 @@ const App: React.FC = () => {
   };
 
   // Resource operations
-  const handleAddResource = (newItem: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleAddResource = async (newItem: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (editingItem) {
       const updated = storageService.updateItem(editingItem.id, newItem);
       if (updated) {
-        setItems(storageService.getItems());
+        await storageService.flushPendingWrites();
+        setItems([...storageService.getItems()]);
       }
       setEditingItem(null);
     } else {
       storageService.addItem(newItem);
-      setItems(storageService.getItems());
+      await storageService.flushPendingWrites();
+      setItems([...storageService.getItems()]);
     }
     storageService.updateTagCounts();
     setTags(storageService.getTags());
   };
 
-  const handleDeleteResource = (id: string) => {
+  const handleDeleteResource = async (id: string) => {
     const item = items.find(i => i.id === id);
     setConfirmDialog({
       isOpen: true,
       title: 'Delete Resource',
       message: `Are you sure you want to delete "${item?.title}"? This action cannot be undone.`,
-      onConfirm: () => {
+      onConfirm: async () => {
         storageService.deleteItem(id);
-        setItems(storageService.getItems());
+        await storageService.flushPendingWrites();
+        setItems([...storageService.getItems()]);
         if (selectedItemId === id) {
           setSelectedItemId(null);
         }
@@ -704,10 +742,11 @@ const App: React.FC = () => {
   };
 
   // Toggle star status
-  const handleToggleStar = (id: string) => {
+  const handleToggleStar = async (id: string) => {
     const updatedItems = fileManager.toggleStar(items, id);
-    setItems(updatedItems);
     storageService.saveItems(updatedItems);
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
   };
 
   // Track recent file when item is selected
@@ -748,8 +787,9 @@ The content includes substantial information that would be valuable for referenc
         return i;
       });
 
-      setItems(updatedItems);
       storageService.saveItems(updatedItems);
+      await storageService.flushPendingWrites();
+      setItems([...storageService.getItems()]);
     } catch (error) {
       console.error('Failed to generate summary:', error);
     } finally {
@@ -816,26 +856,28 @@ The content includes substantial information that would be valuable for referenc
   };
 
   // Folder operations
-  const handleAddFolder = (newFolder: Omit<Folder, 'id'>) => {
+  const handleAddFolder = async (newFolder: Omit<Folder, 'id'>) => {
     if (editingFolder) {
       storageService.updateFolder(editingFolder.id, newFolder);
       setEditingFolder(null);
     } else {
       storageService.addFolder(newFolder);
     }
+    await storageService.flushPendingWrites();
     setFolders(storageService.getFolders());
   };
 
-  const handleDeleteFolder = (id: string) => {
+  const handleDeleteFolder = async (id: string) => {
     const folder = folders.find(f => f.id === id);
     setConfirmDialog({
       isOpen: true,
       title: 'Delete Folder',
       message: `Are you sure you want to delete "${folder?.name}"? All subfolders will also be deleted. Resources will be moved to Uncategorized.`,
-      onConfirm: () => {
+      onConfirm: async () => {
         storageService.deleteFolder(id);
+        await storageService.flushPendingWrites();
         setFolders(storageService.getFolders());
-        setItems(storageService.getItems());
+        setItems([...storageService.getItems()]);
         if (filterState.folderId === id) {
           setFilterState(prev => ({ ...prev, folderId: 'all' }));
         }
@@ -845,13 +887,14 @@ The content includes substantial information that would be valuable for referenc
   };
 
   // Tag operations
-  const handleAddTag = (newTag: Omit<Tag, 'id'>) => {
+  const handleAddTag = async (newTag: Omit<Tag, 'id'>) => {
     if (editingTag) {
       storageService.updateTag(editingTag.id, newTag);
       setEditingTag(null);
     } else {
       storageService.addTag(newTag);
     }
+    await storageService.flushPendingWrites();
     setTags(storageService.getTags());
   };
 
@@ -862,16 +905,17 @@ The content includes substantial information that would be valuable for referenc
     return created;
   };
 
-  const handleDeleteTag = (id: string) => {
+  const handleDeleteTag = async (id: string) => {
     const tag = tags.find(t => t.id === id);
     setConfirmDialog({
       isOpen: true,
       title: 'Delete Tag',
       message: `Are you sure you want to delete "${tag?.name}"? All nested tags will also be deleted.`,
-      onConfirm: () => {
+      onConfirm: async () => {
         storageService.deleteTag(id);
+        await storageService.flushPendingWrites();
         setTags(storageService.getTags());
-        setItems(storageService.getItems());
+        setItems([...storageService.getItems()]);
         if (filterState.tagId === id) {
           setFilterState(prev => ({ ...prev, tagId: null }));
         }
@@ -879,6 +923,18 @@ The content includes substantial information that would be valuable for referenc
       },
     });
   };
+
+  // Show loading screen while storage is initializing
+  if (!isStorageReady) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-surface">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-content-secondary text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -998,11 +1054,7 @@ The content includes substantial information that would be valuable for referenc
         storagePath={customStoragePath}
         onStoragePathChange={(path) => {
           setCustomStoragePath(path);
-          if (path) {
-            localStorage.setItem(STORAGE_KEYS.STORAGE_PATH, path);
-          } else {
-            localStorage.removeItem(STORAGE_KEYS.STORAGE_PATH);
-          }
+          storageService.setCustomStoragePath(path);
         }}
       />
 

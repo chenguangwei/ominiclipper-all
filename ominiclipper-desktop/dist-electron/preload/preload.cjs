@@ -42,6 +42,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Browser extension sync
   syncFromBrowserExtension: (item) => ipcRenderer.invoke('sync:browserExtension', item),
+
+  // ============================================
+  // JSON File Storage API
+  // ============================================
+  storageAPI: {
+    // Get the data directory path
+    getDataPath: () => ipcRenderer.invoke('storage:getDataPath'),
+
+    // Library data (items, tags, folders)
+    readLibrary: () => ipcRenderer.invoke('storage:readLibrary'),
+    writeLibrary: (data) => ipcRenderer.invoke('storage:writeLibrary', data),
+
+    // Settings data (theme, locale, preferences)
+    readSettings: () => ipcRenderer.invoke('storage:readSettings'),
+    writeSettings: (data) => ipcRenderer.invoke('storage:writeSettings', data),
+
+    // Migrate from localStorage to JSON files
+    migrate: (legacyData) => ipcRenderer.invoke('storage:migrate', legacyData),
+  },
 });
 
 // Handle dialog messages from main process

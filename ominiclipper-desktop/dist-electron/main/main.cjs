@@ -372,7 +372,10 @@ ipcMain.handle('fs:scanDirectory', async (event, dirPath, options = {}) => {
 ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName, customStoragePath = null) => {
   try {
     // Use custom path if provided, otherwise use default userData path
-    const baseStoragePath = customStoragePath || app.getPath('userData');
+    const userDataPath = app.getPath('userData');
+    console.log('app.getPath("userData"):', userDataPath);
+
+    const baseStoragePath = customStoragePath || userDataPath;
     const storagePath = path.join(baseStoragePath, 'OmniClipper', 'documents');
 
     // Ensure storage directory exists
@@ -395,8 +398,15 @@ ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName,
     // Copy file
     fs.copyFileSync(sourcePath, targetPath);
 
-    return { success: true, targetPath, fileName: finalFileName };
+    // Use fs.realpathSync to get the canonical path with correct case on macOS
+    let finalTargetPath = fs.realpathSync(targetPath);
+
+    console.log('copyFileToStorage - targetPath:', targetPath);
+    console.log('copyFileToStorage - finalTargetPath:', finalTargetPath);
+
+    return { success: true, targetPath: finalTargetPath, fileName: finalFileName };
   } catch (error) {
+    console.error('copyFileToStorage error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -430,6 +440,202 @@ function getMimeType(filePath) {
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
+// ============================================
+// JSON File Storage System
+// ============================================
+
+// Get storage paths
+function getStoragePaths() {
+  const userDataPath = app.getPath('userData');
+  const basePath = path.join(userDataPath, 'OmniClipper');
+  return {
+    base: basePath,
+    data: path.join(basePath, 'data'),
+    backups: path.join(basePath, 'backups'),
+    libraryFile: path.join(basePath, 'data', 'library.json'),
+    settingsFile: path.join(basePath, 'data', 'settings.json'),
+  };
+}
+
+// Ensure storage directories exist
+function ensureStorageDirectories() {
+  const paths = getStoragePaths();
+  [paths.data, paths.backups].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  });
+}
+
+// Create backup of library.json (keep last 5)
+function createLibraryBackup() {
+  const paths = getStoragePaths();
+  if (!fs.existsSync(paths.libraryFile)) return;
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFile = path.join(paths.backups, `library-${timestamp}.json`);
+
+  try {
+    fs.copyFileSync(paths.libraryFile, backupFile);
+    console.log('[Storage] Created backup:', backupFile);
+
+    // Clean old backups (keep last 5)
+    const backups = fs.readdirSync(paths.backups)
+      .filter(f => f.startsWith('library-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+
+    if (backups.length > 5) {
+      backups.slice(5).forEach(oldBackup => {
+        const oldPath = path.join(paths.backups, oldBackup);
+        fs.unlinkSync(oldPath);
+        console.log('[Storage] Removed old backup:', oldBackup);
+      });
+    }
+  } catch (error) {
+    console.error('[Storage] Backup failed:', error);
+  }
+}
+
+// Get data directory path
+ipcMain.handle('storage:getDataPath', () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+  return paths.data;
+});
+
+// Read library.json
+ipcMain.handle('storage:readLibrary', async () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    if (!fs.existsSync(paths.libraryFile)) {
+      console.log('[Storage] library.json not found, returning null');
+      return null;
+    }
+
+    const content = fs.readFileSync(paths.libraryFile, 'utf-8');
+    const data = JSON.parse(content);
+    console.log('[Storage] Loaded library.json, items:', data.items?.length || 0);
+    return data;
+  } catch (error) {
+    console.error('[Storage] Failed to read library.json:', error);
+    return null;
+  }
+});
+
+// Write library.json (with auto-backup)
+ipcMain.handle('storage:writeLibrary', async (event, data) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Create backup before overwriting (if file exists)
+    if (fs.existsSync(paths.libraryFile)) {
+      createLibraryBackup();
+    }
+
+    // Update lastModified timestamp
+    data.lastModified = new Date().toISOString();
+
+    // Write atomically: write to temp file first, then rename
+    const tempFile = paths.libraryFile + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, paths.libraryFile);
+
+    console.log('[Storage] Saved library.json, items:', data.items?.length || 0);
+    return { success: true };
+  } catch (error) {
+    console.error('[Storage] Failed to write library.json:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Read settings.json
+ipcMain.handle('storage:readSettings', async () => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    if (!fs.existsSync(paths.settingsFile)) {
+      console.log('[Storage] settings.json not found, returning null');
+      return null;
+    }
+
+    const content = fs.readFileSync(paths.settingsFile, 'utf-8');
+    const data = JSON.parse(content);
+    console.log('[Storage] Loaded settings.json');
+    return data;
+  } catch (error) {
+    console.error('[Storage] Failed to read settings.json:', error);
+    return null;
+  }
+});
+
+// Write settings.json
+ipcMain.handle('storage:writeSettings', async (event, data) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Write atomically
+    const tempFile = paths.settingsFile + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, paths.settingsFile);
+
+    console.log('[Storage] Saved settings.json');
+    return { success: true };
+  } catch (error) {
+    console.error('[Storage] Failed to write settings.json:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Migrate data from localStorage to JSON files
+ipcMain.handle('storage:migrate', async (event, legacyData) => {
+  const paths = getStoragePaths();
+  ensureStorageDirectories();
+
+  try {
+    // Create library.json from legacy data
+    const libraryData = {
+      version: 1,
+      lastModified: new Date().toISOString(),
+      items: legacyData.items || [],
+      tags: legacyData.tags || [],
+      folders: legacyData.folders || [],
+    };
+
+    // Create settings.json from legacy data
+    const settingsData = {
+      version: 1,
+      colorMode: legacyData.colorMode || 'dark',
+      themeId: legacyData.themeId || 'blue',
+      locale: legacyData.locale || 'en',
+      customStoragePath: legacyData.storagePath || null,
+      viewMode: legacyData.viewMode || 'list',
+      filterState: legacyData.filterState || { search: '', tagId: null, folderId: 'all' },
+      recentFiles: legacyData.recentFiles || [],
+      favoriteFolders: legacyData.favoriteFolders || [],
+    };
+
+    // Write both files
+    fs.writeFileSync(paths.libraryFile, JSON.stringify(libraryData, null, 2), 'utf-8');
+    fs.writeFileSync(paths.settingsFile, JSON.stringify(settingsData, null, 2), 'utf-8');
+
+    console.log('[Storage] Migration completed successfully');
+    console.log('[Storage] - Items:', libraryData.items.length);
+    console.log('[Storage] - Tags:', libraryData.tags.length);
+    console.log('[Storage] - Folders:', libraryData.folders.length);
+
+    return { success: true, libraryData, settingsData };
+  } catch (error) {
+    console.error('[Storage] Migration failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Register custom protocol for local file access
 // This allows the renderer to access local files via localfile:// URLs
 protocol.registerSchemesAsPrivileged([
@@ -440,31 +646,44 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       stream: true,
-      bypassCSP: true
+      bypassCSP: true,
+      allowFileAccess: true
     }
   }
 ]);
 
 // App events
 app.whenReady().then(() => {
-  // Register the localfile protocol handler
-  protocol.handle('localfile', (request) => {
-    // URL format: localfile:///absolute/path/to/file
-    const url = request.url;
-    let filePath = url.replace('localfile:///', '');
+  // Register the localfile protocol handler using registerFileProtocol (simpler API)
+  protocol.registerFileProtocol('localfile', (request, callback) => {
+    try {
+      // URL format: localfile:///absolute/path/to/file (3 slashes)
+      const url = request.url;
+      console.log('[localfile protocol] raw URL:', url);
 
-    // Decode URI components (handles spaces and special characters)
-    filePath = decodeURIComponent(filePath);
+      // 1. Remove protocol prefix - URL format is localfile:///Users/...
+      // After removing localfile://, the result should start with /Users/...
+      let filePath = url.replace('localfile://', '');
 
-    // On Windows, convert /C:/... to C:\...
-    if (process.platform === 'win32' && filePath.startsWith('/')) {
-      filePath = filePath.slice(1);
+      // 2. Ensure path starts with / for macOS absolute paths
+      if (!filePath.startsWith('/')) {
+        filePath = '/' + filePath;
+      }
+
+      // 3. Fix case: users -> Users (macOS path is case-insensitive but our logic needs consistency)
+      if (filePath.startsWith('/users/')) {
+        filePath = '/Users' + filePath.slice(6);
+      }
+
+      // 4. Normalize path for cross-platform compatibility
+      const finalPath = path.normalize(filePath);
+      console.log('[localfile protocol] final path:', finalPath);
+
+      callback({ path: finalPath });
+    } catch (error) {
+      console.error('[localfile protocol] error:', error);
+      callback({ error: -6 }); // FILE_NOT_FOUND
     }
-
-    console.log('localfile protocol request:', filePath);
-
-    // Use net.fetch to return the file
-    return net.fetch(pathToFileURL(filePath).href);
   });
 
   createWindow();

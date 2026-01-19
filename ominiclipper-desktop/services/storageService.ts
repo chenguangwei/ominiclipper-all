@@ -1,16 +1,397 @@
 /**
  * 本地存储服务
  * 提供资源、文件夹、标签的本地持久化存储
+ *
+ * 存储策略：
+ * - Electron 环境：使用 JSON 文件存储（library.json, settings.json）
+ * - Web 环境：降级使用 localStorage
+ * - 内存缓存 + 防抖写入，确保性能
+ * - Eagle 风格：mtime.json 自动追踪，backup/ 自动备份
  */
-import { ResourceItem, Tag, Folder, ResourceType } from '../types';
-import { MOCK_ITEMS, MOCK_TAGS, MOCK_FOLDERS } from '../constants';
+import { ResourceItem, Tag, Folder, FilterState, ViewMode } from '../types';
+import { MOCK_TAGS, MOCK_FOLDERS } from '../constants';
+import * as mtimeService from './mtimeService';
+import * as backupService from './backupService';
 
+// ============================================
+// 类型定义
+// ============================================
+
+interface LibraryData {
+  version: number;
+  lastModified: string;
+  items: ResourceItem[];
+  tags: Tag[];
+  folders: Folder[];
+}
+
+interface SettingsData {
+  version: number;
+  colorMode: string;
+  themeId: string;
+  locale: string;
+  customStoragePath: string | null;
+  viewMode: string;
+  filterState: FilterState;
+  recentFiles: any[];
+  favoriteFolders: string[];
+}
+
+// localStorage 键（用于迁移和 Web 降级）
 const STORAGE_KEYS = {
   ITEMS: 'omniclipper_items',
   TAGS: 'omniclipper_tags',
   FOLDERS: 'omniclipper_folders',
   FILTER_STATE: 'omniclipper_filter_state',
   VIEW_MODE: 'omniclipper_view_mode',
+  COLOR_MODE: 'app_color_mode',
+  THEME_ID: 'app_theme_id',
+  STORAGE_PATH: 'omniclipper_storage_path',
+  RECENT_FILES: 'omniclipper_recent_files',
+  FAVORITE_FOLDERS: 'omniclipper_favorite_folders',
+  LOCALE: 'LOCALE_KEY',
+};
+
+// ============================================
+// 内存缓存和状态
+// ============================================
+
+let libraryCache: LibraryData | null = null;
+let settingsCache: SettingsData | null = null;
+let isElectronEnvironment = false;
+let isInitialized = false;
+let libraryWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let settingsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+
+const WRITE_DEBOUNCE_MS = 500;
+
+// ============================================
+// Electron API 类型
+// ============================================
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      storageAPI?: {
+        getDataPath: () => Promise<string>;
+        readLibrary: () => Promise<LibraryData | null>;
+        writeLibrary: (data: LibraryData) => Promise<{ success: boolean; error?: string }>;
+        readSettings: () => Promise<SettingsData | null>;
+        writeSettings: (data: SettingsData) => Promise<{ success: boolean; error?: string }>;
+        migrate: (legacyData: any) => Promise<{ success: boolean; libraryData?: LibraryData; settingsData?: SettingsData; error?: string }>;
+      };
+      mtimeAPI?: {
+        readMTime: () => Promise<MTimeData>;
+        updateMTime: (itemId: string) => Promise<{ success: boolean }>;
+        setMTime: (itemId: string, timestamp: number) => Promise<{ success: boolean }>;
+        removeMTime: (itemId: string) => Promise<{ success: boolean }>;
+        getMTime: (itemId: string) => Promise<number | null>;
+        getAll: () => Promise<Record<string, number>>;
+        getCount: () => Promise<number>;
+      };
+      backupAPI?: {
+        createBackup: (data: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+        listBackups: () => Promise<BackupInfo[]>;
+        restoreBackup: (backupPath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+        deleteBackup: (backupPath: string) => Promise<{ success: boolean; error?: string }>;
+        cleanupOldBackups: (keepCount: number) => Promise<{ deleted: number; error?: string }>;
+        getBackupPath: () => Promise<string>;
+      };
+    };
+  }
+}
+
+interface MTimeData {
+  times: Record<string, number>;
+  count: number;
+  lastModified: string;
+}
+
+interface BackupInfo {
+  path: string;
+  fileName: string;
+  timestamp: Date;
+  size: number;
+  itemCount: number;
+}
+
+// ============================================
+// 初始化
+// ============================================
+
+/**
+ * 初始化存储服务
+ * 应在应用启动时调用一次
+ */
+export const initStorage = async (): Promise<void> => {
+  if (isInitialized) {
+    console.log('[Storage] Already initialized');
+    return;
+  }
+
+  isElectronEnvironment = !!(window.electronAPI?.storageAPI);
+  console.log('[Storage] Environment:', isElectronEnvironment ? 'Electron' : 'Web');
+
+  if (isElectronEnvironment) {
+    await initElectronStorage();
+  } else {
+    initLocalStorage();
+  }
+
+  isInitialized = true;
+  console.log('[Storage] Initialization complete');
+};
+
+/**
+ * Electron 环境初始化
+ */
+const initElectronStorage = async (): Promise<void> => {
+  const storageAPI = window.electronAPI!.storageAPI!;
+
+  // 尝试读取 library.json
+  libraryCache = await storageAPI.readLibrary();
+
+  if (!libraryCache) {
+    // JSON 文件不存在，检查 localStorage 是否有数据需要迁移
+    const legacyItems = localStorage.getItem(STORAGE_KEYS.ITEMS);
+
+    if (legacyItems) {
+      console.log('[Storage] Found legacy localStorage data, migrating...');
+      await migrateFromLocalStorage();
+    } else {
+      // 全新安装，初始化空数据
+      console.log('[Storage] Fresh install, initializing empty data');
+      libraryCache = {
+        version: 1,
+        lastModified: new Date().toISOString(),
+        items: [],
+        tags: MOCK_TAGS,
+        folders: MOCK_FOLDERS,
+      };
+      // 保存初始数据
+      await storageAPI.writeLibrary(libraryCache);
+    }
+  }
+
+  // 读取 settings.json
+  settingsCache = await storageAPI.readSettings();
+  if (!settingsCache) {
+    settingsCache = getDefaultSettings();
+    await storageAPI.writeSettings(settingsCache);
+  }
+
+  console.log('[Storage] Loaded from JSON files');
+  console.log('[Storage] - Items:', libraryCache?.items?.length || 0);
+  console.log('[Storage] - Tags:', libraryCache?.tags?.length || 0);
+  console.log('[Storage] - Folders:', libraryCache?.folders?.length || 0);
+};
+
+/**
+ * Web 环境初始化（降级使用 localStorage）
+ */
+const initLocalStorage = (): void => {
+  // 从 localStorage 加载到内存缓存
+  try {
+    const items = localStorage.getItem(STORAGE_KEYS.ITEMS);
+    const tags = localStorage.getItem(STORAGE_KEYS.TAGS);
+    const folders = localStorage.getItem(STORAGE_KEYS.FOLDERS);
+
+    libraryCache = {
+      version: 1,
+      lastModified: new Date().toISOString(),
+      items: items ? JSON.parse(items) : [],
+      tags: tags ? JSON.parse(tags) : MOCK_TAGS,
+      folders: folders ? JSON.parse(folders) : MOCK_FOLDERS,
+    };
+
+    settingsCache = getDefaultSettings();
+    // 从 localStorage 读取设置
+    const colorMode = localStorage.getItem(STORAGE_KEYS.COLOR_MODE);
+    const themeId = localStorage.getItem(STORAGE_KEYS.THEME_ID);
+    const filterState = localStorage.getItem(STORAGE_KEYS.FILTER_STATE);
+    const viewMode = localStorage.getItem(STORAGE_KEYS.VIEW_MODE);
+
+    if (colorMode) settingsCache.colorMode = colorMode;
+    if (themeId) settingsCache.themeId = themeId;
+    if (filterState) settingsCache.filterState = JSON.parse(filterState);
+    if (viewMode) settingsCache.viewMode = viewMode;
+
+  } catch (e) {
+    console.error('[Storage] Failed to load from localStorage:', e);
+    libraryCache = {
+      version: 1,
+      lastModified: new Date().toISOString(),
+      items: [],
+      tags: MOCK_TAGS,
+      folders: MOCK_FOLDERS,
+    };
+    settingsCache = getDefaultSettings();
+  }
+
+  console.log('[Storage] Loaded from localStorage (Web fallback)');
+};
+
+/**
+ * 获取默认设置
+ */
+const getDefaultSettings = (): SettingsData => ({
+  version: 1,
+  colorMode: 'dark',
+  themeId: 'blue',
+  locale: 'en',
+  customStoragePath: null,
+  viewMode: 'list',
+  filterState: { search: '', tagId: null, color: null, folderId: 'all' },
+  recentFiles: [],
+  favoriteFolders: [],
+});
+
+/**
+ * 从 localStorage 迁移数据到 JSON 文件
+ */
+const migrateFromLocalStorage = async (): Promise<void> => {
+  if (!isElectronEnvironment) return;
+
+  const storageAPI = window.electronAPI!.storageAPI!;
+
+  // 收集 localStorage 中的所有数据
+  const legacyData: any = {};
+
+  try {
+    const items = localStorage.getItem(STORAGE_KEYS.ITEMS);
+    const tags = localStorage.getItem(STORAGE_KEYS.TAGS);
+    const folders = localStorage.getItem(STORAGE_KEYS.FOLDERS);
+    const colorMode = localStorage.getItem(STORAGE_KEYS.COLOR_MODE);
+    const themeId = localStorage.getItem(STORAGE_KEYS.THEME_ID);
+    const storagePath = localStorage.getItem(STORAGE_KEYS.STORAGE_PATH);
+    const filterState = localStorage.getItem(STORAGE_KEYS.FILTER_STATE);
+    const viewMode = localStorage.getItem(STORAGE_KEYS.VIEW_MODE);
+    const recentFiles = localStorage.getItem(STORAGE_KEYS.RECENT_FILES);
+    const favoriteFolders = localStorage.getItem(STORAGE_KEYS.FAVORITE_FOLDERS);
+    const locale = localStorage.getItem(STORAGE_KEYS.LOCALE);
+
+    legacyData.items = items ? JSON.parse(items) : [];
+    legacyData.tags = tags ? JSON.parse(tags) : MOCK_TAGS;
+    legacyData.folders = folders ? JSON.parse(folders) : MOCK_FOLDERS;
+    legacyData.colorMode = colorMode || 'dark';
+    legacyData.themeId = themeId || 'blue';
+    legacyData.storagePath = storagePath || null;
+    legacyData.filterState = filterState ? JSON.parse(filterState) : null;
+    legacyData.viewMode = viewMode || 'list';
+    legacyData.recentFiles = recentFiles ? JSON.parse(recentFiles) : [];
+    legacyData.favoriteFolders = favoriteFolders ? JSON.parse(favoriteFolders) : [];
+    legacyData.locale = locale || 'en';
+
+  } catch (e) {
+    console.error('[Storage] Error reading localStorage for migration:', e);
+  }
+
+  // 调用 Electron 主进程进行迁移
+  const result = await storageAPI.migrate(legacyData);
+
+  if (result.success) {
+    libraryCache = result.libraryData || null;
+    settingsCache = result.settingsData || null;
+    console.log('[Storage] Migration successful');
+
+    // 可选：清理 localStorage（保留一个标记以防万一）
+    // Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+    // localStorage.setItem('omniclipper_migrated', 'true');
+  } else {
+    console.error('[Storage] Migration failed:', result.error);
+    // 降级：使用 localStorage 数据初始化缓存
+    libraryCache = {
+      version: 1,
+      lastModified: new Date().toISOString(),
+      items: legacyData.items || [],
+      tags: legacyData.tags || MOCK_TAGS,
+      folders: legacyData.folders || MOCK_FOLDERS,
+    };
+  }
+};
+
+// ============================================
+// 防抖写入
+// ============================================
+
+/**
+ * 调度 library 写入（防抖）
+ */
+const scheduleLibraryWrite = (): void => {
+  if (libraryWriteTimer) {
+    clearTimeout(libraryWriteTimer);
+  }
+
+  libraryWriteTimer = setTimeout(async () => {
+    if (isElectronEnvironment && libraryCache) {
+      const result = await window.electronAPI!.storageAPI!.writeLibrary(libraryCache);
+      if (!result.success) {
+        console.error('[Storage] Failed to write library:', result.error);
+      }
+    } else if (libraryCache) {
+      // Web 降级：写入 localStorage
+      try {
+        localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(libraryCache.items));
+        localStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(libraryCache.tags));
+        localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(libraryCache.folders));
+      } catch (e) {
+        console.error('[Storage] Failed to write to localStorage:', e);
+      }
+    }
+    libraryWriteTimer = null;
+  }, WRITE_DEBOUNCE_MS);
+};
+
+/**
+ * 调度 settings 写入（防抖）
+ */
+const scheduleSettingsWrite = (): void => {
+  if (settingsWriteTimer) {
+    clearTimeout(settingsWriteTimer);
+  }
+
+  settingsWriteTimer = setTimeout(async () => {
+    if (isElectronEnvironment && settingsCache) {
+      const result = await window.electronAPI!.storageAPI!.writeSettings(settingsCache);
+      if (!result.success) {
+        console.error('[Storage] Failed to write settings:', result.error);
+      }
+    } else if (settingsCache) {
+      // Web 降级：写入 localStorage
+      try {
+        localStorage.setItem(STORAGE_KEYS.COLOR_MODE, settingsCache.colorMode);
+        localStorage.setItem(STORAGE_KEYS.THEME_ID, settingsCache.themeId);
+        localStorage.setItem(STORAGE_KEYS.VIEW_MODE, settingsCache.viewMode);
+        localStorage.setItem(STORAGE_KEYS.FILTER_STATE, JSON.stringify(settingsCache.filterState));
+      } catch (e) {
+        console.error('[Storage] Failed to write settings to localStorage:', e);
+      }
+    }
+    settingsWriteTimer = null;
+  }, WRITE_DEBOUNCE_MS);
+};
+
+/**
+ * 立即写入所有挂起的更改（用于应用关闭前）
+ */
+export const flushPendingWrites = async (): Promise<void> => {
+  if (libraryWriteTimer) {
+    clearTimeout(libraryWriteTimer);
+    libraryWriteTimer = null;
+  }
+  if (settingsWriteTimer) {
+    clearTimeout(settingsWriteTimer);
+    settingsWriteTimer = null;
+  }
+
+  if (isElectronEnvironment) {
+    if (libraryCache) {
+      await window.electronAPI!.storageAPI!.writeLibrary(libraryCache);
+    }
+    if (settingsCache) {
+      await window.electronAPI!.storageAPI!.writeSettings(settingsCache);
+    }
+  }
 };
 
 // ==================== 资源项目操作 ====================
@@ -19,27 +400,17 @@ const STORAGE_KEYS = {
  * 获取所有资源项目
  */
 export const getItems = (): ResourceItem[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.ITEMS);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    // 首次加载返回空数组，不自动保存 MOCK 数据
-    return [];
-  } catch (e) {
-    console.error('Failed to load items:', e);
-    return [];
-  }
+  return libraryCache?.items || [];
 };
 
 /**
  * 保存所有资源项目
  */
 export const saveItems = (items: ResourceItem[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(items));
-  } catch (e) {
-    console.error('Failed to save items:', e);
+  if (libraryCache) {
+    libraryCache.items = items;
+    libraryCache.lastModified = new Date().toISOString();
+    scheduleLibraryWrite();
   }
 };
 
@@ -54,7 +425,7 @@ export const addItem = (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt
     updatedAt: new Date().toISOString(),
   };
   const items = getItems();
-  items.unshift(newItem); // 添加到开头
+  items.unshift(newItem);
   saveItems(items);
   return newItem;
 };
@@ -103,27 +474,17 @@ export const getItemById = (id: string): ResourceItem | null => {
  * 获取所有标签
  */
 export const getTags = (): Tag[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.TAGS);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    saveTags(MOCK_TAGS);
-    return MOCK_TAGS;
-  } catch (e) {
-    console.error('Failed to load tags:', e);
-    return MOCK_TAGS;
-  }
+  return libraryCache?.tags || [];
 };
 
 /**
  * 保存所有标签
  */
 export const saveTags = (tags: Tag[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(tags));
-  } catch (e) {
-    console.error('Failed to save tags:', e);
+  if (libraryCache) {
+    libraryCache.tags = tags;
+    libraryCache.lastModified = new Date().toISOString();
+    scheduleLibraryWrite();
   }
 };
 
@@ -212,27 +573,17 @@ export const updateTagCounts = (): void => {
  * 获取所有文件夹
  */
 export const getFolders = (): Folder[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.FOLDERS);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-    saveFolders(MOCK_FOLDERS);
-    return MOCK_FOLDERS;
-  } catch (e) {
-    console.error('Failed to load folders:', e);
-    return MOCK_FOLDERS;
-  }
+  return libraryCache?.folders || [];
 };
 
 /**
  * 保存所有文件夹
  */
 export const saveFolders = (folders: Folder[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(folders));
-  } catch (e) {
-    console.error('Failed to save folders:', e);
+  if (libraryCache) {
+    libraryCache.folders = folders;
+    libraryCache.lastModified = new Date().toISOString();
+    scheduleLibraryWrite();
   }
 };
 
@@ -299,6 +650,110 @@ const getDescendantFolderIds = (parentId: string, folders: Folder[]): string[] =
   return ids;
 };
 
+// ==================== 设置操作 ====================
+
+/**
+ * 获取设置
+ */
+export const getSettings = (): SettingsData => {
+  return settingsCache || getDefaultSettings();
+};
+
+/**
+ * 更新设置
+ */
+export const updateSettings = (updates: Partial<SettingsData>): void => {
+  if (settingsCache) {
+    Object.assign(settingsCache, updates);
+    scheduleSettingsWrite();
+  }
+};
+
+/**
+ * 获取颜色模式
+ */
+export const getColorMode = (): string => {
+  return settingsCache?.colorMode || 'dark';
+};
+
+/**
+ * 设置颜色模式
+ */
+export const setColorMode = (mode: string): void => {
+  if (settingsCache) {
+    settingsCache.colorMode = mode;
+    scheduleSettingsWrite();
+  }
+};
+
+/**
+ * 获取主题 ID
+ */
+export const getThemeId = (): string => {
+  return settingsCache?.themeId || 'blue';
+};
+
+/**
+ * 设置主题 ID
+ */
+export const setThemeId = (themeId: string): void => {
+  if (settingsCache) {
+    settingsCache.themeId = themeId;
+    scheduleSettingsWrite();
+  }
+};
+
+/**
+ * 获取自定义存储路径
+ */
+export const getCustomStoragePath = (): string | null => {
+  return settingsCache?.customStoragePath || null;
+};
+
+/**
+ * 设置自定义存储路径
+ */
+export const setCustomStoragePath = (path: string | null): void => {
+  if (settingsCache) {
+    settingsCache.customStoragePath = path;
+    scheduleSettingsWrite();
+  }
+};
+
+/**
+ * 获取最近文件列表
+ */
+export const getRecentFiles = (): any[] => {
+  return settingsCache?.recentFiles || [];
+};
+
+/**
+ * 设置最近文件列表
+ */
+export const setRecentFiles = (files: any[]): void => {
+  if (settingsCache) {
+    settingsCache.recentFiles = files;
+    scheduleSettingsWrite();
+  }
+};
+
+/**
+ * 获取收藏文件夹列表
+ */
+export const getFavoriteFolders = (): string[] => {
+  return settingsCache?.favoriteFolders || [];
+};
+
+/**
+ * 设置收藏文件夹列表
+ */
+export const setFavoriteFolders = (folders: string[]): void => {
+  if (settingsCache) {
+    settingsCache.favoriteFolders = folders;
+    scheduleSettingsWrite();
+  }
+};
+
 // ==================== 工具函数 ====================
 
 /**
@@ -309,9 +764,31 @@ const generateId = (): string => {
 };
 
 /**
+ * 检查是否已初始化
+ */
+export const isStorageInitialized = (): boolean => {
+  return isInitialized;
+};
+
+/**
+ * 检查是否为 Electron 环境
+ */
+export const isElectron = (): boolean => {
+  return isElectronEnvironment;
+};
+
+/**
  * 清除所有本地数据
  */
 export const clearAllData = (): void => {
+  if (libraryCache) {
+    libraryCache.items = [];
+    libraryCache.tags = MOCK_TAGS;
+    libraryCache.folders = MOCK_FOLDERS;
+    scheduleLibraryWrite();
+  }
+
+  // 同时清理 localStorage
   Object.values(STORAGE_KEYS).forEach(key => {
     localStorage.removeItem(key);
   });
@@ -347,8 +824,6 @@ export const importData = (jsonData: string): boolean => {
 
 /**
  * 从浏览器扩展导入数据（去重合并）
- * @param jsonData 浏览器扩展导出的 JSON 数据
- * @returns 导入的新项目数量
  */
 export const importFromBrowserExtension = (jsonData: string): number => {
   try {
@@ -375,10 +850,9 @@ export const importFromBrowserExtension = (jsonData: string): number => {
     // 合并项目（去重）
     if (data.items && Array.isArray(data.items)) {
       const newItems = data.items.filter((item: ResourceItem) => !existingIds.has(item.id));
-      // 标记从浏览器扩展导入的项目
-      const markedItems = newItems.map(item => ({
+      const markedItems = newItems.map((item: ResourceItem) => ({
         ...item,
-        source: 'browser-extension',
+        source: 'browser-extension' as const,
         updatedAt: new Date().toISOString(),
       }));
       const allItems = [...markedItems, ...existingItems];
@@ -406,5 +880,157 @@ export const getImportStats = (jsonData: string): { items: number; tags: number;
     };
   } catch {
     return null;
+  }
+};
+
+// ============================================
+// Eagle 风格 MTime 追踪集成
+// ============================================
+
+/**
+ * 更新项目的 mtime（Eagle 风格）
+ * 当项目被添加或修改时调用
+ */
+export const updateItemMTime = async (itemId: string): Promise<void> => {
+  if (!isElectronEnvironment) return;
+  try {
+    await mtimeService.updateMTime(itemId);
+  } catch (e) {
+    console.error('[Storage] Failed to update mtime:', e);
+  }
+};
+
+/**
+ * 批量更新多个项目的 mtime
+ */
+export const batchUpdateItemMTime = async (itemIds: string[]): Promise<void> => {
+  if (!isElectronEnvironment) return;
+  try {
+    await mtimeService.batchUpdateMTime(itemIds);
+  } catch (e) {
+    console.error('[Storage] Failed to batch update mtime:', e);
+  }
+};
+
+/**
+ * 删除项目的 mtime 记录
+ */
+export const removeItemMTime = async (itemId: string): Promise<void> => {
+  if (!isElectronEnvironment) return;
+  try {
+    await mtimeService.removeMTime(itemId);
+  } catch (e) {
+    console.error('[Storage] Failed to remove mtime:', e);
+  }
+};
+
+/**
+ * 获取所有项目的 mtime
+ */
+export const getAllMTime = async (): Promise<Record<string, number>> => {
+  if (!isElectronEnvironment) return {};
+  try {
+    return await mtimeService.getAllMTime();
+  } catch {
+    return {};
+  }
+};
+
+// ============================================
+// Eagle 风格自动备份集成
+// ============================================
+
+/**
+ * 创建当前数据的备份（Eagle 风格）
+ * 在执行可能影响数据的操作前调用
+ */
+export const createBackup = async (): Promise<{ success: boolean; path?: string }> => {
+  if (!isElectronEnvironment) {
+    return { success: false };
+  }
+
+  const backupData = {
+    items: getItems(),
+    tags: getTags(),
+    folders: getFolders(),
+    _backupInfo: {
+      timestamp: new Date().toISOString(),
+      version: 1,
+      itemCount: getItems().length,
+    },
+  };
+
+  try {
+    const result = await backupService.createBackup(backupData);
+    if (result.success) {
+      console.log('[Storage] Backup created:', result.path);
+    }
+    return result;
+  } catch (e) {
+    console.error('[Storage] Failed to create backup:', e);
+    return { success: false };
+  }
+};
+
+/**
+ * 列出所有备份
+ */
+export const listBackups = async (): Promise<BackupInfo[]> => {
+  if (!isElectronEnvironment) return [];
+  try {
+    return await backupService.listBackups();
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * 从备份恢复数据
+ */
+export const restoreFromBackup = async (backupPath: string): Promise<boolean> => {
+  if (!isElectronEnvironment) return false;
+
+  try {
+    const result = await backupService.restoreBackup(backupPath);
+    if (result.success && result.data) {
+      // 恢复数据
+      if (result.data.items) saveItems(result.data.items);
+      if (result.data.tags) saveTags(result.data.tags);
+      if (result.data.folders) saveFolders(result.data.folders);
+      console.log('[Storage] Restored from backup:', backupPath);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('[Storage] Failed to restore backup:', e);
+    return false;
+  }
+};
+
+/**
+ * 清理旧备份（保留最近的 N 个）
+ */
+export const cleanupOldBackups = async (keepCount?: number): Promise<number> => {
+  if (!isElectronEnvironment) return 0;
+  try {
+    const result = await backupService.cleanupOldBackups(keepCount);
+    if (result.deleted > 0) {
+      console.log('[Storage] Cleaned up', result.deleted, 'old backups');
+    }
+    return result.deleted;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * 获取备份目录路径
+ */
+export const getBackupPath = async (): Promise<string> => {
+  if (!isElectronEnvironment) return '';
+  try {
+    return await backupService.getBackupPath();
+  } catch {
+    return '';
   }
 };

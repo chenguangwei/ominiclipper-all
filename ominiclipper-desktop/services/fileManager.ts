@@ -4,13 +4,8 @@
  */
 
 import { ResourceItem, ResourceType, RecentFile, FileStats } from '../types';
-
-// Storage keys
-const STORAGE_KEYS = {
-  RECENT_FILES: 'omniclipper_recent_files',
-  FAVORITE_FOLDERS: 'omniclipper_favorite_folders',
-  FILE_STATS: 'omniclipper_file_stats',
-};
+import * as storageService from './storageService';
+import { importFile, deleteItemFiles } from './fileStorageService';
 
 // MIME type mappings
 const MIME_TYPE_MAP: Record<string, ResourceType> = {
@@ -112,27 +107,14 @@ export function addRecentFile(item: ResourceItem): void {
   };
 
   const updated = [newRecent, ...filtered].slice(0, 50); // Keep last 50
-
-  try {
-    localStorage.setItem(STORAGE_KEYS.RECENT_FILES, JSON.stringify(updated));
-  } catch (e) {
-    console.error('Failed to save recent files:', e);
-  }
+  storageService.setRecentFiles(updated);
 }
 
 /**
  * Get recent files list
  */
 export function getRecentFiles(): RecentFile[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.RECENT_FILES);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load recent files:', e);
-  }
-  return [];
+  return storageService.getRecentFiles() as RecentFile[];
 }
 
 /**
@@ -146,23 +128,14 @@ export function incrementRecentFileCount(path: string): void {
     }
     return f;
   });
-
-  try {
-    localStorage.setItem(STORAGE_KEYS.RECENT_FILES, JSON.stringify(updated));
-  } catch (e) {
-    console.error('Failed to update recent files:', e);
-  }
+  storageService.setRecentFiles(updated);
 }
 
 /**
  * Clear recent files history
  */
 export function clearRecentFiles(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEYS.RECENT_FILES);
-  } catch (e) {
-    console.error('Failed to clear recent files:', e);
-  }
+  storageService.setRecentFiles([]);
 }
 
 /**
@@ -174,41 +147,24 @@ export function addFavoriteFolder(path: string): boolean {
     return false; // Already exists
   }
 
-  try {
-    const updated = [...favorites, path];
-    localStorage.setItem(STORAGE_KEYS.FAVORITE_FOLDERS, JSON.stringify(updated));
-    return true;
-  } catch (e) {
-    console.error('Failed to save favorite folder:', e);
-    return false;
-  }
+  const updated = [...favorites, path];
+  storageService.setFavoriteFolders(updated);
+  return true;
 }
 
 /**
  * Get favorite folders
  */
 export function getFavoriteFolders(): string[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.FAVORITE_FOLDERS);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error('Failed to load favorite folders:', e);
-  }
-  return [];
+  return storageService.getFavoriteFolders();
 }
 
 /**
  * Remove a folder from favorites
  */
 export function removeFavoriteFolder(path: string): void {
-  try {
-    const favorites = getFavoriteFolders().filter(p => p !== path);
-    localStorage.setItem(STORAGE_KEYS.FAVORITE_FOLDERS, JSON.stringify(favorites));
-  } catch (e) {
-    console.error('Failed to remove favorite folder:', e);
-  }
+  const favorites = getFavoriteFolders().filter(p => p !== path);
+  storageService.setFavoriteFolders(favorites);
 }
 
 /**
@@ -568,4 +524,39 @@ export function getUsablePath(item: ResourceItem): string | undefined {
 
   // Otherwise return the stored path (might be blob: URL which could be expired)
   return item.path;
+}
+
+// ============================================
+// Eagle-Style File Storage Integration
+// ============================================
+
+/**
+ * Import a file to Eagle-style storage
+ * @param sourcePath Source file path
+ * @param itemData Item metadata
+ */
+export async function importFileToStorage(
+  sourcePath: string,
+  itemData: Partial<ResourceItem>
+): Promise<{ success: boolean; item?: ResourceItem; error?: string }> {
+  return await importFile(sourcePath, itemData);
+}
+
+/**
+ * Delete item files from Eagle-style storage
+ * @param itemId Item ID to delete
+ */
+export async function deleteItemFromStorage(
+  itemId: string
+): Promise<{ success: boolean; error?: string }> {
+  return await deleteItemFiles(itemId);
+}
+
+/**
+ * Get storage path for an item
+ */
+export async function getItemStoragePath(_itemId: string): Promise<string> {
+  const { getStoragePath } = await import('./fileStorageService');
+  const storagePath = await getStoragePath();
+  return storagePath;
 }
