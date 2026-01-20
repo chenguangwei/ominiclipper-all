@@ -7,5 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #640 | 5:21 PM | ✅ | Phase 3 RAG Assistant Design Document Opened | ~328 |
+| #634 | 5:08 PM | ✅ | Phase 3 RAG Assistant Design Document Opened | ~245 |
 | #617 | 4:20 PM | ✅ | Phase 2 Supabase Integration Implementation Plan Created | ~357 |
 </claude-mem-context>
