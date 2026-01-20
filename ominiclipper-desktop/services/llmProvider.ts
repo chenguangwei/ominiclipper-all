@@ -373,6 +373,71 @@ class LLMProviderService {
   }
 
   /**
+   * 流式聊天方法
+   */
+  async chatStream(
+    prompt: string,
+    onToken: (token: string) => void
+  ): Promise<string> {
+    // 目前返回简单实现，实际项目中会连接真实 LLM API
+    const response = "这是模拟的流式响应。在实际项目中，这里会调用真实的 LLM API 并实现流式输出。";
+
+    // 模拟流式输出效果
+    for (let i = 0; i < response.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      onToken(response[i]);
+    }
+
+    return response;
+  }
+
+  /**
+   * 带上下文的聊天方法
+   */
+  async chatWithContext(
+    context: string,
+    question: string,
+    chatHistory: string,
+    onToken?: (token: string) => void
+  ): Promise<string> {
+    const systemPrompt = `你是 OmniClipper 知识助手。基于以下资料回答用户问题。
+
+## 规则
+1. 基于提供的资料回答，不要编造信息
+2. 如果资料不足以回答，明确说明
+3. 用中文回答，除非用户用英文提问
+4. 回答要简洁，条理清晰
+
+## 格式
+- 使用编号列表呈现多个要点
+- 重要信息加粗强调
+- 引用来源使用 [编号] 标注`;
+
+    const fullPrompt = `${systemPrompt}
+
+## 资料
+${context}
+
+## 对话历史
+${chatHistory}
+
+## 问题
+${question}`;
+
+    if (onToken) {
+      return this.chatStream(fullPrompt, onToken);
+    }
+
+    // 目前返回简单实现，实际项目中会连接真实 LLM API
+    return `根据提供的资料，关于"${question}"的信息：
+
+这是模拟的 AI 响应。在实际实现中，将调用真实的 LLM 提供商（如 OpenAI、Anthropic 等）的 API 来获取答案。
+
+**当前上下文：**
+${context.slice(0, 200)}...`;
+  }
+
+  /**
    * 测试 API 连接
    */
   async testConnection(

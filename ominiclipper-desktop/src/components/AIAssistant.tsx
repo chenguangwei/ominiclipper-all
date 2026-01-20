@@ -3,6 +3,7 @@ import Icon from './Icon';
 import { chatService } from '../services/chatService';
 import { hybridSearchService } from '../services/hybridSearchService';
 import { subscriptionManager } from '../services/subscriptionManager';
+import { llmProviderService } from '../../services/llmProvider';
 import { ChatMessage, SearchResult } from '../types/chat';
 
 interface AIAssistantProps {
@@ -45,6 +46,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
     chatService.addMessage('user', question);
     setMessages([...chatService.getMessages()]);
 
+    // 添加临时的空回复消息用于显示流式输出
+    const tempMessageId = crypto.randomUUID();
+    chatService.addMessage('assistant', '', []);
+    setMessages([...chatService.getMessages()]);
+
     try {
       const canUse = await subscriptionManager.canUseAI();
       if (!canUse) {
@@ -55,12 +61,39 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
       }
 
       const results = await hybridSearchService.search({ query: question, limit: 5 });
-      const response = await mockLLMCall(question, results);
+      const context = results.map(r => r.text).join('\n\n');
 
-      chatService.addMessage('assistant', response.content, response.sources);
-      setMessages([...chatService.getMessages()]);
+      let fullResponse = '';
 
-      subscriptionManager.updateUsage(response.tokens.output);
+      // 使用流式输出
+      await llmProviderService.chatWithContext(
+        context,
+        question,
+        chatService.buildContextForLLM(),
+        (token) => {
+          fullResponse += token;
+          // 实时更新 UI
+          const currentMessages = chatService.getMessages();
+          const lastMsgIndex = currentMessages.findIndex(m => m.role === 'assistant');
+          if (lastMsgIndex !== -1) {
+            currentMessages[lastMsgIndex].content = fullResponse;
+            setMessages([...currentMessages]);
+          }
+        }
+      );
+
+      // 更新完整响应和来源信息
+      const currentMessages = chatService.getMessages();
+      const lastMsgIndex = currentMessages.findIndex(m => m.role === 'assistant');
+      if (lastMsgIndex !== -1) {
+        currentMessages[lastMsgIndex].content = fullResponse;
+        currentMessages[lastMsgIndex].sources = results;
+        setMessages([...currentMessages]);
+      }
+
+      // 更新 Token 使用量（模拟值，实际项目中从 API 响应获取）
+      const estimatedTokens = Math.ceil(fullResponse.length / 4);
+      subscriptionManager.updateUsage(estimatedTokens);
     } catch (error) {
       console.error('AI Assistant error:', error);
       chatService.addMessage('assistant', '抱歉，发生了错误。请重试。');
@@ -150,13 +183,3 @@ const MessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
 };
 
 export default AIAssistant;
-
-// Mock LLM call (临时)
-async function mockLLMCall(question: string, results: SearchResult[]) {
-  const context = results.map(r => r.text).join('\n\n');
-  return {
-    content: `根据搜索结果，关于"${question}"的信息：\n\n这是模拟的 AI 响应。在实际实现中，将调用 LLM Provider。`,
-    sources: results,
-    tokens: { input: 100, output: 50 },
-  };
-}
