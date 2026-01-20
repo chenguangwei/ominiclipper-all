@@ -33,3 +33,4 @@ ominiclipper-desktop/release/builder-debug.yml
 
 # Git worktrees
 .worktrees/
+package-lock.json
