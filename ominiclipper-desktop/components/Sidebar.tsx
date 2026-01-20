@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tag, Folder, ColorMode } from '../types';
 import Icon from './Icon';
+import AIAssistant from './AIAssistant';
 
 interface SidebarProps {
   tags: Tag[];
@@ -47,6 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
   const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -298,7 +300,25 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* User / Cloud Section */}
-        <div className="mt-auto p-3 border-t border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-tertiary">
+        <div className="mt-auto p-3 border-t border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-tertiary space-y-1">
+          {/* AI Assistant Button */}
+          <button
+            onClick={() => setShowAIAssistant(true)}
+            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${
+              isLight
+                ? 'hover:bg-gray-100 text-gray-700'
+                : 'hover:bg-white/5 text-slate-300 hover:text-white'
+            }`}
+          >
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+              <Icon name="psychology" className="text-[18px] text-primary" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="text-xs font-medium">AI 助手</div>
+              <div className="text-[10px] opacity-60">与数据对话</div>
+            </div>
+          </button>
+
           {user ? (
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">
@@ -367,6 +387,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </>
       )}
+
+      {/* AI Assistant Panel */}
+      <AIAssistant isOpen={showAIAssistant} onClose={() => setShowAIAssistant(false)} />
     </>
   );
 };
