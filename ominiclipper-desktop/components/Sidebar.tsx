@@ -311,7 +311,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
-              <Icon name="智能助手" className="text-[18px] text-primary" />
+              <Icon name="psychology" className="text-[18px] text-primary" />
             </div>
             <div className="flex-1 text-left">
               <div className="text-xs font-medium">AI 助手</div>
