@@ -12,6 +12,7 @@ function electronCopyPlugin() {
       const mainSrc = resolve(__dirname, 'electron/main.cjs');
       const preloadSrc = resolve(__dirname, 'electron/preload.js');
       const httpServerSrc = resolve(__dirname, 'electron/httpServer.cjs');
+      const vectorServiceSrc = resolve(__dirname, 'electron/vectorService.cjs');
       const mainDestDir = resolve(__dirname, 'dist-electron/main');
       const preloadDestDir = resolve(__dirname, 'dist-electron/preload');
 
@@ -24,6 +25,10 @@ function electronCopyPlugin() {
       // Copy httpServer.cjs for browser extension sync
       if (existsSync(httpServerSrc)) {
         copyFileSync(httpServerSrc, resolve(mainDestDir, 'httpServer.cjs'));
+      }
+      // Copy vectorService.cjs for vector storage service
+      if (existsSync(vectorServiceSrc)) {
+        copyFileSync(vectorServiceSrc, resolve(mainDestDir, 'vectorService.cjs'));
       }
       console.log('Electron CJS files copied to dist-electron/');
     }
