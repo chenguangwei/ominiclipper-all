@@ -86,12 +86,33 @@ async function initialize(userDataPath) {
     console.log('[VectorService] Loading embedding model:', MODEL_NAME);
     console.log('[VectorService] Models cache:', modelsPath);
 
-    // Load embedding model
-    embedder = await pipeline('feature-extraction', MODEL_NAME, {
-      quantized: true, // Use quantized model for smaller size
-    });
+    // Load embedding model with retry mechanism
+    console.log('[VectorService] Attempting to load embedding model:', MODEL_NAME);
+    let modelLoadAttempts = 0;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 2000;
 
-    console.log('[VectorService] Model loaded successfully');
+    while (modelLoadAttempts < MAX_RETRIES) {
+      try {
+        embedder = await pipeline('feature-extraction', MODEL_NAME, {
+          quantized: true, // Use quantized model for smaller size
+          timeout: 30000, // Increase timeout to 30 seconds
+        });
+        console.log('[VectorService] Model loaded successfully');
+        break; // Success, exit loop
+      } catch (modelError) {
+        modelLoadAttempts++;
+        console.warn(`[VectorService] Model load attempt ${modelLoadAttempts} failed:`, modelError.message);
+
+        if (modelLoadAttempts < MAX_RETRIES) {
+          console.log(`[VectorService] Retrying in ${RETRY_DELAY}ms...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        } else {
+          console.error('[VectorService] All retry attempts failed');
+          throw new Error(`Failed to load embedding model after ${MAX_RETRIES} attempts: ${modelError.message}`);
+        }
+      }
+    }
 
     // Connect to LanceDB
     console.log('[VectorService] Connecting to LanceDB:', dbPath);
