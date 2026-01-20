@@ -202,6 +202,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Move a file from source path to target path
     moveFile: (sourcePath, targetPath) => ipcRenderer.invoke('file:moveFile', sourcePath, targetPath),
   },
+
+  // ============================================
+  // Vector Store API (Semantic Search)
+  // ============================================
+  vectorAPI: {
+    // Initialize vector store (load model and connect to database)
+    initialize: () => ipcRenderer.invoke('vector:initialize'),
+
+    // Index a document for semantic search
+    index: (id, text, metadata) => ipcRenderer.invoke('vector:index', { id, text, metadata }),
+
+    // Search for similar documents
+    search: (query, limit) => ipcRenderer.invoke('vector:search', { query, limit }),
+
+    // Delete a document from the index
+    delete: (id) => ipcRenderer.invoke('vector:delete', { id }),
+
+    // Get vector store statistics
+    getStats: () => ipcRenderer.invoke('vector:getStats'),
+  },
 });
 
 // Handle dialog messages from main process

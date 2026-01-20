@@ -24,6 +24,7 @@ import * as fileManager from './services/fileManager';
 import { t, getLocale, setLocale, getAvailableLocales } from './services/i18n';
 import * as thumbnailService from './services/thumbnailService';
 import * as contentExtractionService from './services/contentExtractionService';
+import { vectorStoreService } from './services/vectorStoreService';
 
 // Sorting types
 type SortType = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
@@ -93,6 +94,12 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [customStoragePath, setCustomStoragePath] = useState<string | null>(null);
 
+  // Semantic search state
+  const [isSemanticSearchEnabled, setIsSemanticSearchEnabled] = useState(true);
+  const [semanticSearchResults, setSemanticSearchResults] = useState<string[]>([]);
+  const [isSemanticSearching, setIsSemanticSearching] = useState(false);
+  const semanticSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Initialize storage service (async)
   useEffect(() => {
     const initApp = async () => {
@@ -116,6 +123,13 @@ const App: React.FC = () => {
 
       setIsStorageReady(true);
       console.log('[App] Storage initialized successfully');
+
+      // Initialize vector store for semantic search (async, non-blocking)
+      storageService.initVectorStore().then(success => {
+        if (success) {
+          console.log('[App] Vector store ready for semantic search');
+        }
+      });
     };
 
     initApp();
@@ -143,6 +157,41 @@ const App: React.FC = () => {
     const locale = getLocale();
     console.log('Current locale:', locale);
   }, []);
+
+  // Semantic search effect - triggered when search query changes
+  useEffect(() => {
+    // Clear previous timeout
+    if (semanticSearchTimeoutRef.current) {
+      clearTimeout(semanticSearchTimeoutRef.current);
+    }
+
+    // If search is empty or semantic search is disabled, clear results
+    if (!filterState.search || !isSemanticSearchEnabled) {
+      setSemanticSearchResults([]);
+      setIsSemanticSearching(false);
+      return;
+    }
+
+    // Debounce semantic search (300ms)
+    setIsSemanticSearching(true);
+    semanticSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const results = await vectorStoreService.search(filterState.search, 20);
+        setSemanticSearchResults(results.map(r => r.id));
+      } catch (err) {
+        console.error('[App] Semantic search error:', err);
+        setSemanticSearchResults([]);
+      } finally {
+        setIsSemanticSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (semanticSearchTimeoutRef.current) {
+        clearTimeout(semanticSearchTimeoutRef.current);
+      }
+    };
+  }, [filterState.search, isSemanticSearchEnabled]);
 
   // Handle browser extension sync
   useEffect(() => {
@@ -330,12 +379,28 @@ const App: React.FC = () => {
     return ids;
   }, [folders]);
 
-  // Filter logic
+  // Filter logic with semantic search support
   const filteredItems = useMemo(() => {
+    // Build semantic search set for fast lookup
+    const semanticSet = new Set(semanticSearchResults);
+    const hasSemanticResults = isSemanticSearchEnabled && semanticSearchResults.length > 0;
+
     let result = items.filter(item => {
-      // Search filter
-      if (filterState.search && !item.title.toLowerCase().includes(filterState.search.toLowerCase())) {
-        return false;
+      // Search filter - use hybrid approach (semantic + keyword)
+      if (filterState.search) {
+        const keywordMatch = item.title.toLowerCase().includes(filterState.search.toLowerCase()) ||
+          item.tags.some(tagId => {
+            const tag = tags.find(t => t.id === tagId);
+            return tag?.name.toLowerCase().includes(filterState.search.toLowerCase());
+          }) ||
+          (item.contentSnippet?.toLowerCase().includes(filterState.search.toLowerCase()));
+
+        const semanticMatch = hasSemanticResults && semanticSet.has(item.id);
+
+        // Include if either keyword or semantic matches
+        if (!keywordMatch && !semanticMatch) {
+          return false;
+        }
       }
 
       // Type filter
@@ -378,8 +443,25 @@ const App: React.FC = () => {
       }
     });
 
-    // Sort
+    // Sort - prioritize semantic matches when searching
     result = [...result].sort((a, b) => {
+      // When searching with semantic results, prioritize semantic matches
+      if (filterState.search && hasSemanticResults) {
+        const aIsSemantic = semanticSet.has(a.id);
+        const bIsSemantic = semanticSet.has(b.id);
+
+        if (aIsSemantic && !bIsSemantic) return -1;
+        if (!aIsSemantic && bIsSemantic) return 1;
+
+        // If both are semantic matches, sort by their order in results (relevance)
+        if (aIsSemantic && bIsSemantic) {
+          const aIndex = semanticSearchResults.indexOf(a.id);
+          const bIndex = semanticSearchResults.indexOf(b.id);
+          return aIndex - bIndex;
+        }
+      }
+
+      // Default sorting
       switch (sortType) {
         case 'date-desc':
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -395,7 +477,7 @@ const App: React.FC = () => {
     });
 
     return result;
-  }, [filterState, items, tags, sortType, getDescendantFolderIds]);
+  }, [filterState, items, tags, sortType, getDescendantFolderIds, semanticSearchResults, isSemanticSearchEnabled]);
 
   // Arrow keys: Navigate items (must be after filteredItems definition)
   useEffect(() => {

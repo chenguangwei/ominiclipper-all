@@ -16,7 +16,10 @@
     "electron:build:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
+    "@lancedb/lancedb": "^0.23.0",
     "@supabase/supabase-js": "2.39.3",
+    "@xenova/transformers": "^2.17.2",
+    "apache-arrow": "^18.1.0",
     "docx-preview": "^0.3.7",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",

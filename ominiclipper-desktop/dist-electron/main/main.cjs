@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const httpServer = require('./httpServer.cjs');
+const vectorService = require('./vectorService.cjs');
 
 // Debug: check what we got from electron
 console.log('Electron module keys:', Object.keys(electron));
@@ -1243,4 +1244,29 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Cleanup
   httpServer.stopServer();
+});
+
+// ============================================
+// Vector Store API (Semantic Search)
+// ============================================
+
+ipcMain.handle('vector:initialize', async () => {
+  const userDataPath = app.getPath('userData');
+  return await vectorService.initialize(userDataPath);
+});
+
+ipcMain.handle('vector:index', async (event, { id, text, metadata }) => {
+  return await vectorService.indexDocument(id, text, metadata);
+});
+
+ipcMain.handle('vector:search', async (event, { query, limit }) => {
+  return await vectorService.search(query, limit || 10);
+});
+
+ipcMain.handle('vector:delete', async (event, { id }) => {
+  return await vectorService.deleteDocument(id);
+});
+
+ipcMain.handle('vector:getStats', async () => {
+  return await vectorService.getStats();
 });

@@ -1,10 +1,19 @@
 /**
  * OmniCollector - Subscription Manager Service
  * 订阅管理 - 处理用户订阅和配额管理
+ *
+ * 支持云端同步（通过 Supabase profiles 表）
  */
 
-import { UserSubscription, SubscriptionPlan, UsageRecord } from '../types/classification';
+import { UserSubscription, SubscriptionPlan } from '../types/classification';
 import llmProviderService, { SUBSCRIPTION_PLANS } from './llmProvider';
+import {
+  getCurrentUser,
+  getUserProfile,
+  incrementTokenUsage as cloudIncrementTokenUsage,
+  checkQuota as cloudCheckQuota,
+  UserProfile,
+} from '../supabaseClient';
 
 // 存储键
 const STORAGE_KEY_SUBSCRIPTION = 'OMNICLIPPER_SUBSCRIPTION';
@@ -18,13 +27,153 @@ interface BillingHistoryItem {
   status: 'completed' | 'refunded' | 'failed';
 }
 
+// 云端配额常量
+const FREE_TIER_TOKEN_LIMIT = 10_000;
+const PRO_TIER_TOKEN_LIMIT = 1_000_000;
+
 class SubscriptionManager {
   private subscription: UserSubscription | null = null;
   private billingHistory: BillingHistoryItem[] = [];
 
+  // Cloud profile cache
+  private cloudProfile: UserProfile | null = null;
+  private cloudProfileLastFetched: number = 0;
+  private readonly CLOUD_CACHE_TTL = 60_000; // 1 minute cache
+
   constructor() {
     this.loadSubscription();
     this.loadBillingHistory();
+  }
+
+  // ============================================
+  // Cloud Sync Methods (Supabase Integration)
+  // ============================================
+
+  /**
+   * 从云端同步用户配置文件
+   */
+  async syncFromCloud(): Promise<boolean> {
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        this.cloudProfile = null;
+        return false;
+      }
+
+      const profile = await getUserProfile();
+      if (profile) {
+        this.cloudProfile = profile;
+        this.cloudProfileLastFetched = Date.now();
+
+        // 同步订阅状态到本地
+        if (profile.is_pro || profile.subscription_tier !== 'free') {
+          const planId = profile.subscription_tier === 'team' ? 'team' : 'pro';
+          if (!this.subscription || this.subscription.planId !== planId) {
+            this.subscription = {
+              planId,
+              status: 'active',
+              startDate: profile.created_at,
+              endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
+              monthlyQuota: profile.is_pro ? PRO_TIER_TOKEN_LIMIT : FREE_TIER_TOKEN_LIMIT,
+              usedQuota: profile.usage_tokens_this_month,
+              tokensUsed: profile.usage_tokens_this_month,
+            };
+            this.saveSubscription();
+          }
+        }
+
+        console.log('[SubscriptionManager] Cloud sync successful');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('[SubscriptionManager] Cloud sync failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 获取云端配置（带缓存）
+   */
+  async getCloudProfile(): Promise<UserProfile | null> {
+    const now = Date.now();
+    if (this.cloudProfile && (now - this.cloudProfileLastFetched) < this.CLOUD_CACHE_TTL) {
+      return this.cloudProfile;
+    }
+
+    await this.syncFromCloud();
+    return this.cloudProfile;
+  }
+
+  /**
+   * 检查云端配额
+   */
+  async checkCloudQuota(estimatedTokens: number): Promise<{
+    allowed: boolean;
+    remaining: number;
+    limit: number;
+  }> {
+    try {
+      return await cloudCheckQuota(estimatedTokens);
+    } catch (error) {
+      console.error('[SubscriptionManager] Cloud quota check failed:', error);
+      // 回退到本地检查
+      return {
+        allowed: this.canUseAI(),
+        remaining: this.getRemainingQuota(),
+        limit: this.getQuotaLimit(),
+      };
+    }
+  }
+
+  /**
+   * 增加云端 Token 使用量
+   */
+  async incrementCloudUsage(tokens: number): Promise<boolean> {
+    try {
+      const result = await cloudIncrementTokenUsage(tokens);
+      if (result.success) {
+        // 更新本地缓存
+        if (this.cloudProfile) {
+          this.cloudProfile.usage_tokens_this_month = result.newTotal;
+        }
+        // 同时更新本地订阅
+        this.updateUsage(tokens);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('[SubscriptionManager] Cloud usage increment failed:', error);
+      // 仍然更新本地
+      this.updateUsage(tokens);
+      return false;
+    }
+  }
+
+  /**
+   * 获取当前是否为 Pro 用户（优先云端）
+   */
+  async isPro(): Promise<boolean> {
+    const profile = await this.getCloudProfile();
+    if (profile) {
+      return profile.is_pro;
+    }
+    // 回退到本地
+    return this.subscription?.planId === 'pro' || this.subscription?.planId === 'team';
+  }
+
+  /**
+   * 获取当前订阅层级（优先云端）
+   */
+  async getSubscriptionTier(): Promise<'free' | 'pro' | 'team'> {
+    const profile = await this.getCloudProfile();
+    if (profile) {
+      return profile.subscription_tier;
+    }
+    // 回退到本地
+    if (this.subscription?.planId === 'team') return 'team';
+    if (this.subscription?.planId === 'pro') return 'pro';
+    return 'free';
   }
 
   /**

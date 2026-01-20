@@ -14,6 +14,7 @@ import * as mtimeService from './mtimeService';
 import * as backupService from './backupService';
 import * as folderDirService from './folderDirectoryService';
 import * as itemMetaService from './itemMetadataService';
+import { vectorStoreService } from './vectorStoreService';
 
 // Browser-compatible path utilities (avoid Node.js path module)
 const pathUtils = {
@@ -131,6 +132,14 @@ declare global {
         saveItemsIndex: (index: any) => Promise<{ success: boolean; error?: string }>;
         readItemsIndex: () => Promise<any | null>;
       };
+      vectorAPI?: {
+        initialize: () => Promise<{ success: boolean; error?: string }>;
+        index: (id: string, text: string, metadata: any) => Promise<{ success: boolean; error?: string }>;
+        search: (query: string, limit: number) => Promise<any[]>;
+        delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+        getStats: () => Promise<any>;
+      };
+      [key: string]: any;
     };
   }
 }
@@ -465,6 +474,11 @@ export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'upd
   // Save item metadata to Eagle-style structure
   if (isElectronEnvironment) {
     await itemMetaService.saveItemMetadata(newItem);
+
+    // Index for semantic search (async, non-blocking)
+    indexItemForSemanticSearch(newItem).catch(err =>
+      console.error('[Storage] Vector indexing failed:', err)
+    );
   }
 
   return newItem;
@@ -518,6 +532,13 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
   // Update item metadata in Eagle-style structure
   if (isElectronEnvironment) {
     await itemMetaService.saveItemMetadata(items[index]);
+
+    // Re-index for semantic search if content changed
+    if (updates.title || updates.contentSnippet || updates.description || updates.tags) {
+      indexItemForSemanticSearch(items[index]).catch(err =>
+        console.error('[Storage] Vector re-indexing failed:', err)
+      );
+    }
   }
 
   return items[index];
@@ -537,6 +558,11 @@ export const deleteItem = async (id: string): Promise<boolean> => {
   // Delete item metadata from Eagle-style structure
   if (isElectronEnvironment) {
     await itemMetaService.deleteItemMetadata(id);
+
+    // Remove from semantic search index
+    removeItemFromSemanticSearch(id).catch(err =>
+      console.error('[Storage] Vector deletion failed:', err)
+    );
   }
 
   return true;
@@ -1128,4 +1154,93 @@ export const getBackupPath = async (): Promise<string> => {
   } catch {
     return '';
   }
+};
+
+// ============================================
+// 向量索引集成 (Semantic Search)
+// ============================================
+
+/**
+ * 为单个项目创建语义搜索索引
+ * 异步执行，不阻塞主流程
+ */
+const indexItemForSemanticSearch = async (item: ResourceItem): Promise<void> => {
+  if (!isElectronEnvironment) return;
+
+  // 构建索引文本：标题 + 内容片段 + 标签
+  const text = [
+    item.title,
+    item.contentSnippet || '',
+    item.description || '',
+    item.tags.join(' '),
+  ].filter(Boolean).join(' ');
+
+  if (!text.trim()) return;
+
+  await vectorStoreService.indexDocument({
+    id: item.id,
+    text,
+    metadata: {
+      title: item.title,
+      type: item.type,
+      tags: item.tags,
+      createdAt: item.createdAt,
+    },
+  });
+};
+
+/**
+ * 从语义搜索索引中删除项目
+ */
+const removeItemFromSemanticSearch = async (itemId: string): Promise<void> => {
+  if (!isElectronEnvironment) return;
+  await vectorStoreService.deleteDocument(itemId);
+};
+
+/**
+ * 批量索引所有现有项目（用于迁移）
+ */
+export const indexAllItemsForSemanticSearch = async (
+  onProgress?: (indexed: number, total: number) => void
+): Promise<{ indexed: number; errors: number }> => {
+  if (!isElectronEnvironment) {
+    return { indexed: 0, errors: 0 };
+  }
+
+  const items = getItems();
+  let indexed = 0;
+  let errors = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      await indexItemForSemanticSearch(items[i]);
+      indexed++;
+    } catch (e) {
+      console.error('[Storage] Failed to index item:', items[i].id, e);
+      errors++;
+    }
+
+    if (onProgress) {
+      onProgress(i + 1, items.length);
+    }
+  }
+
+  console.log(`[Storage] Semantic indexing complete: ${indexed} indexed, ${errors} errors`);
+  return { indexed, errors };
+};
+
+/**
+ * 初始化向量存储服务
+ * 应在应用启动时调用
+ */
+export const initVectorStore = async (): Promise<boolean> => {
+  if (!isElectronEnvironment) return false;
+
+  const result = await vectorStoreService.initialize();
+  if (result.success) {
+    console.log('[Storage] Vector store initialized');
+  } else {
+    console.error('[Storage] Vector store initialization failed:', result.error);
+  }
+  return result.success;
 };

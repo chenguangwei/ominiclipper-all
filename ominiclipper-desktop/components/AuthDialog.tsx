@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
-import { getClient, saveSupabaseConfig, getSupabaseConfig, resetClient } from '../supabaseClient';
+import {
+  isSupabaseConfigured,
+  signInWithEmail,
+  signUpWithEmail,
+  getUserProfile,
+  UserProfile,
+} from '../supabaseClient';
 import { APP_THEMES } from '../constants';
 import { ColorMode } from '../types';
 
@@ -16,7 +22,7 @@ interface AuthDialogProps {
   onLogout: () => void;
 }
 
-type SettingsTab = 'account' | 'appearance' | 'connection';
+type SettingsTab = 'account' | 'appearance';
 
 const COLOR_MODES: { id: ColorMode; label: string; icon: string }[] = [
   { id: 'light', label: 'Light', icon: 'light_mode' },
@@ -36,7 +42,7 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
     onLogout
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('account');
-  
+
   // Auth State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,53 +50,47 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  // Connection State
-  const [config, setConfig] = useState(getSupabaseConfig());
+  // User profile state for quota display
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
      if (isOpen) {
-         // Default to account unless config is missing
-         const { url, key } = getSupabaseConfig();
-         if (!url || !key) {
-             setActiveTab('connection');
-         } else {
-             setActiveTab('account');
+         setActiveTab('account');
+         // Load user profile if logged in
+         if (user) {
+           getUserProfile().then(setProfile);
          }
      }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
-
-  const handleConfigSave = () => {
-      saveSupabaseConfig(config.url, config.key);
-      resetClient();
-      setActiveTab('account');
-  };
 
   const handleAuth = async () => {
       setAuthError(null);
       setLoading(true);
-      const supabase = getClient();
-      
-      if (!supabase) {
-          setAuthError("Configuration missing. Please check connection settings.");
-          setActiveTab('connection');
+
+      if (!isSupabaseConfigured()) {
+          setAuthError("Cloud features not configured. Please contact support or check environment variables.");
           setLoading(false);
           return;
       }
 
       try {
-          const { data, error } = authMode === 'login' 
-            ? await supabase.auth.signInWithPassword({ email, password })
-            : await supabase.auth.signUp({ email, password });
-
-          if (error) throw error;
-          
-          if (data.user) {
-              onLoginSuccess(data.user);
-              if (authMode === 'login') onClose();
-          } else if (authMode === 'signup') {
+          if (authMode === 'login') {
+            const { user: authUser, error } = await signInWithEmail(email, password);
+            if (error) throw new Error(error);
+            if (authUser) {
+              onLoginSuccess(authUser);
+              onClose();
+            }
+          } else {
+            const { user: authUser, error, needsConfirmation } = await signUpWithEmail(email, password);
+            if (error) throw new Error(error);
+            if (needsConfirmation) {
               setAuthError("Check your email for the confirmation link.");
+            } else if (authUser) {
+              onLoginSuccess(authUser);
+            }
           }
       } catch (e: any) {
           setAuthError(e.message || "Authentication failed");
@@ -157,65 +157,62 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
                       </div>
                   </div>
               );
-          case 'connection':
-              return (
-                  <div className="space-y-4">
-                        <p className={sectionDescClass}>Enter your Supabase project details to enable Pro cloud features.</p>
-                        <div>
-                            <label className={labelClass}>Project URL</label>
-                            <input
-                                type="text"
-                                className={inputClass}
-                                placeholder="https://xyz.supabase.co"
-                                value={config.url}
-                                onChange={e => setConfig({...config, url: e.target.value})}
-                            />
-                        </div>
-                        <div>
-                            <label className={labelClass}>Anon Key</label>
-                            <input
-                                type="password"
-                                className={inputClass}
-                                placeholder="eyJhbGciOiJIUzI1NiIsInR5..."
-                                value={config.key}
-                                onChange={e => setConfig({...config, key: e.target.value})}
-                            />
-                        </div>
-                        <button
-                            onClick={handleConfigSave}
-                            className={submitBtnClass}
-                        >
-                            Save Settings
-                        </button>
-                    </div>
-              );
           case 'account':
           default:
               if (user) {
+                  // Calculate quota info from profile
+                  const isPro = profile?.is_pro ?? false;
+                  const tier = profile?.subscription_tier ?? 'free';
+                  const usedTokens = profile?.usage_tokens_this_month ?? 0;
+                  const tokenLimit = isPro ? 1_000_000 : 10_000;
+                  const usagePercent = Math.min(100, (usedTokens / tokenLimit) * 100);
+
+                  const formatTokens = (n: number) => {
+                    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+                    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+                    return n.toString();
+                  };
+
                   return (
                       <div className="text-center py-8">
                           <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-primary to-purple-500 mx-auto flex items-center justify-center text-2xl font-bold text-white mb-4 shadow-xl">
                               {user.email?.charAt(0).toUpperCase()}
                           </div>
-                          <h3 className="text-lg font-medium text-white">{user.email}</h3>
-                          <div className="flex items-center justify-center gap-1 text-primary text-xs font-bold uppercase tracking-wide mt-1 mb-6">
-                              <Icon name="verified" className="text-[14px]" />
-                              Pro Member
-                          </div>
-                          
-                          <div className="bg-white/5 rounded-lg p-4 text-left mb-6">
-                              <div className="flex justify-between text-xs mb-2">
-                                  <span className="text-slate-400">Storage Used</span>
-                                  <span className="text-white">1.2 GB / 10 GB</span>
-                              </div>
-                              <div className="w-full bg-black/40 rounded-full h-1.5">
-                                  <div className="bg-primary h-1.5 rounded-full w-[12%]"></div>
-                              </div>
+                          <h3 className="text-lg font-medium text-content">{user.email}</h3>
+                          <div className={`flex items-center justify-center gap-1 text-xs font-bold uppercase tracking-wide mt-1 mb-6 ${isPro ? 'text-primary' : 'text-slate-400'}`}>
+                              <Icon name={isPro ? 'verified' : 'account_circle'} className="text-[14px]" />
+                              {tier === 'team' ? 'Team Member' : isPro ? 'Pro Member' : 'Free Plan'}
                           </div>
 
-                          <button 
+                          <div className="bg-surface-tertiary rounded-lg p-4 text-left mb-6">
+                              <div className="flex justify-between text-xs mb-2">
+                                  <span className="text-content-secondary">AI Tokens Used (This Month)</span>
+                                  <span className="text-content">{formatTokens(usedTokens)} / {formatTokens(tokenLimit)}</span>
+                              </div>
+                              <div className="w-full bg-black/20 rounded-full h-1.5">
+                                  <div
+                                    className={`h-1.5 rounded-full transition-all ${usagePercent > 90 ? 'bg-red-500' : usagePercent > 70 ? 'bg-yellow-500' : 'bg-primary'}`}
+                                    style={{ width: `${usagePercent}%` }}
+                                  ></div>
+                              </div>
+                              {!isPro && usagePercent > 70 && (
+                                <p className="text-xs text-yellow-500 mt-2">
+                                  Running low on tokens. Upgrade to Pro for 100x more!
+                                </p>
+                              )}
+                          </div>
+
+                          {!isPro && (
+                            <button
+                              className="w-full bg-gradient-to-r from-primary to-purple-500 hover:opacity-90 text-white py-2 rounded-md text-sm font-medium mb-3 transition-opacity"
+                            >
+                              Upgrade to Pro
+                            </button>
+                          )}
+
+                          <button
                             onClick={onLogout}
-                            className="w-full border border-white/10 hover:bg-white/5 text-slate-300 py-2 rounded-md text-sm transition-colors"
+                            className="w-full border border-[rgb(var(--color-border)/var(--border-opacity))] hover:bg-surface-secondary text-content-secondary py-2 rounded-md text-sm transition-colors"
                           >
                               Sign Out
                           </button>
@@ -336,13 +333,6 @@ const AuthDialog: React.FC<AuthDialogProps> = ({
              >
                  <Icon name="palette" className="text-[18px]" />
                  Appearance
-             </button>
-             <button
-                onClick={() => setActiveTab('connection')}
-                className={sidebarItemClass('connection')}
-             >
-                 <Icon name="cloud" className="text-[18px]" />
-                 Connection
              </button>
         </div>
 
