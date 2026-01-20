@@ -1,5 +1,5 @@
 /**
- * OmniClipper Desktop - Electron Main Process
+ * OmniCollector Desktop - Electron Main Process
  */
 
 const electron = require('electron');
@@ -28,7 +28,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'OmniClipper',
+    title: 'OmniCollector',
     icon: path.join(__dirname, '../../public/icon.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -193,7 +193,7 @@ function createMenu() {
     template.unshift({
       label: app.getName(),
       submenu: [
-        { label: 'About OmniClipper', role: 'about' },
+        { label: 'About OmniCollector', role: 'about' },
         { type: 'separator' },
         {
           label: 'Settings',
@@ -205,7 +205,7 @@ function createMenu() {
         { type: 'separator' },
         { label: 'Services', role: 'services' },
         { type: 'separator' },
-        { label: 'Hide OmniClipper', accelerator: 'Command+H', role: 'hide' },
+        { label: 'Hide OmniCollector', accelerator: 'Command+H', role: 'hide' },
         { label: 'Hide Others', accelerator: 'Command+Option+H', role: 'hideOthers' },
         { label: 'Show All', role: 'unhide' },
         { type: 'separator' },
@@ -376,7 +376,7 @@ ipcMain.handle('fs:copyFileToStorage', async (event, sourcePath, targetFileName,
     console.log('app.getPath("userData"):', userDataPath);
 
     const baseStoragePath = customStoragePath || userDataPath;
-    const storagePath = path.join(baseStoragePath, 'OmniClipper', 'documents');
+    const storagePath = path.join(baseStoragePath, 'OmniCollector', 'documents');
 
     // Ensure storage directory exists
     if (!fs.existsSync(storagePath)) {
@@ -447,7 +447,7 @@ function getMimeType(filePath) {
 // Get storage paths
 function getStoragePaths() {
   const userDataPath = app.getPath('userData');
-  const basePath = path.join(userDataPath, 'OmniClipper');
+  const basePath = path.join(userDataPath, 'OmniCollector');
   return {
     base: basePath,
     data: path.join(basePath, 'data'),
@@ -496,6 +496,543 @@ function createLibraryBackup() {
     console.error('[Storage] Backup failed:', error);
   }
 }
+
+// ============================================
+// File Storage System (Eagle-style structure)
+// ============================================
+
+function getFileStoragePaths() {
+  const userDataPath = app.getPath('userData');
+  const basePath = path.join(userDataPath, 'OmniCollector');
+  return {
+    base: basePath,
+    files: path.join(basePath, 'files'),
+  };
+}
+
+ipcMain.handle('fileStorage:getStoragePath', () => {
+  const paths = getFileStoragePaths();
+  if (!fs.existsSync(paths.files)) {
+    fs.mkdirSync(paths.files, { recursive: true });
+  }
+  return paths.files;
+});
+
+ipcMain.handle('fileStorage:createItemStorage', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  try {
+    if (!fs.existsSync(itemDir)) {
+      fs.mkdirSync(itemDir, { recursive: true });
+    }
+    return { success: true, path: itemDir };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:saveFileToStorage', async (event, itemId, fileName, base64Data) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  const filePath = path.join(itemDir, fileName);
+  try {
+    if (!fs.existsSync(itemDir)) {
+      fs.mkdirSync(itemDir, { recursive: true });
+    }
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    return { success: true, path: filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:readFileFromStorage', async (event, itemId, fileName) => {
+  const paths = getFileStoragePaths();
+  const filePath = path.join(paths.files, itemId, fileName);
+  try {
+    const data = fs.readFileSync(filePath);
+    const mimeType = getMimeType(fileName);
+    const base64 = data.toString('base64');
+    return { success: true, dataUrl: `data:${mimeType};base64,${base64}` };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:getFilePath', async (event, itemId, fileName) => {
+  const paths = getFileStoragePaths();
+  return path.join(paths.files, itemId, fileName);
+});
+
+ipcMain.handle('fileStorage:deleteItemStorage', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const itemDir = path.join(paths.files, itemId);
+  try {
+    if (fs.existsSync(itemDir)) {
+      fs.rmSync(itemDir, { recursive: true, force: true });
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:saveItemMetadata', async (event, itemId, metadata) => {
+  const paths = getFileStoragePaths();
+  const metadataPath = path.join(paths.files, itemId, 'metadata.json');
+  try {
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:readItemMetadata', async (event, itemId) => {
+  const paths = getFileStoragePaths();
+  const metadataPath = path.join(paths.files, itemId, 'metadata.json');
+  try {
+    if (!fs.existsSync(metadataPath)) return null;
+    const content = fs.readFileSync(metadataPath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ============================================
+// MTime Tracking System (Eagle-style mtime.json)
+// ============================================
+
+function getMTimeFilePath() {
+  const paths = getStoragePaths();
+  return path.join(paths.data, 'mtime.json');
+}
+
+ipcMain.handle('mtime:readMTime', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) {
+      return { times: {}, count: 0, lastModified: new Date().toISOString() };
+    }
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    const count = data.all || Object.keys(data).filter(k => k !== 'all').length;
+    return { times: data, count, lastModified: new Date().toISOString() };
+  } catch (error) {
+    return { times: {}, count: 0, lastModified: new Date().toISOString() };
+  }
+});
+
+ipcMain.handle('mtime:updateMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  ensureStorageDirectories();
+  try {
+    let data = {};
+    if (fs.existsSync(mtimePath)) {
+      try { data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8')); } catch (e) { data = {}; }
+    }
+    data[itemId] = Date.now();
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:setMTime', async (event, itemId, timestamp) => {
+  const mtimePath = getMTimeFilePath();
+  ensureStorageDirectories();
+  try {
+    let data = {};
+    if (fs.existsSync(mtimePath)) {
+      try { data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8')); } catch (e) { data = {}; }
+    }
+    data[itemId] = timestamp;
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:removeMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return { success: true };
+    let data = JSON.parse(fs.readFileSync(mtimePath, 'utf-8'));
+    delete data[itemId];
+    data.all = Object.keys(data).filter(k => k !== 'all').length;
+    fs.writeFileSync(mtimePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mtime:getMTime', async (event, itemId) => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return null;
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    return data[itemId] || null;
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle('mtime:getAll', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return {};
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    const { all, ...times } = data;
+    return times;
+  } catch (error) {
+    return {};
+  }
+});
+
+ipcMain.handle('mtime:getCount', async () => {
+  const mtimePath = getMTimeFilePath();
+  try {
+    if (!fs.existsSync(mtimePath)) return 0;
+    const content = fs.readFileSync(mtimePath, 'utf-8');
+    const data = JSON.parse(content);
+    return data.all || Object.keys(data).filter(k => k !== 'all').length;
+  } catch (error) {
+    return 0;
+  }
+});
+
+// ============================================
+// Backup System (Eagle-style)
+// ============================================
+
+function getBackupPaths() {
+  const paths = getStoragePaths();
+  return { backupDir: path.join(paths.base, 'backups') };
+}
+
+ipcMain.handle('backup:createBackup', async (event, data) => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/\./g, '-').replace('T', ' ').split(' ')[0] + ' ' + now.toTimeString().split(' ')[0].replace(/:/g, '.');
+    const backupFile = path.join(backupDir, `backup-${timestamp}.${Date.now()}.json`);
+    fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf-8');
+    return { success: true, path: backupFile };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:listBackups', async () => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) return [];
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup-') && f.endsWith('.json')).sort().reverse();
+    return files.map(fileName => {
+      const filePath = path.join(backupDir, fileName);
+      const stats = fs.statSync(filePath);
+      let timestamp = new Date();
+      const match = fileName.match(/backup-(.+)\.\d+\.json/);
+      if (match && match[1]) { try { timestamp = new Date(match[1].replace(' ', 'T')); } catch (e) {} }
+      let itemCount = 0;
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const d = JSON.parse(content);
+        itemCount = d._backupInfo?.itemCount || d.items?.length || 0;
+      } catch (e) {}
+      return { path: filePath, fileName, timestamp, size: stats.size, itemCount };
+    });
+  } catch (error) {
+    return [];
+  }
+});
+
+ipcMain.handle('backup:restoreBackup', async (event, backupPath) => {
+  try {
+    if (!fs.existsSync(backupPath)) return { success: false, error: 'Backup file not found' };
+    const content = fs.readFileSync(backupPath, 'utf-8');
+    const data = JSON.parse(content);
+    const { _backupInfo, ...restoreData } = data;
+    return { success: true, data: restoreData };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:deleteBackup', async (event, backupPath) => {
+  try {
+    if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:cleanupOldBackups', async (event, keepCount = 30) => {
+  const { backupDir } = getBackupPaths();
+  try {
+    if (!fs.existsSync(backupDir)) return { deleted: 0 };
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup-') && f.endsWith('.json')).sort().reverse();
+    if (files.length <= keepCount) return { deleted: 0 };
+    const toDelete = files.slice(keepCount);
+    let deleted = 0;
+    for (const fileName of toDelete) {
+      const filePath = path.join(backupDir, fileName);
+      try { fs.unlinkSync(filePath); deleted++; } catch (e) { console.error('Failed to delete backup:', filePath); }
+    }
+    return { deleted };
+  } catch (error) {
+    return { deleted: 0, error: error.message };
+  }
+});
+
+ipcMain.handle('backup:getBackupPath', async () => {
+  const { backupDir } = getBackupPaths();
+  ensureStorageDirectories();
+  return backupDir;
+});
+
+// ============================================
+// Folder Directory System (Eagle-style folders)
+// ============================================
+
+function getFolderPaths() {
+  const paths = getStoragePaths();
+  return {
+    base: path.join(paths.base, 'folders'),
+  };
+}
+
+ipcMain.handle('folder:getFoldersPath', () => {
+  const paths = getFolderPaths();
+  if (!fs.existsSync(paths.base)) {
+    fs.mkdirSync(paths.base, { recursive: true });
+  }
+  return paths.base;
+});
+
+ipcMain.handle('folder:create', async (event, folderId) => {
+  const paths = getFolderPaths();
+  const folderPath = path.join(paths.base, folderId);
+  try {
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+    return { success: true, path: folderPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('folder:delete', async (event, folderId) => {
+  const paths = getFolderPaths();
+  const folderPath = path.join(paths.base, folderId);
+  try {
+    if (fs.existsSync(folderPath)) {
+      fs.rmSync(folderPath, { recursive: true, force: true });
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('folder:exists', async (event, folderId) => {
+  const paths = getFolderPaths();
+  const folderPath = path.join(paths.base, folderId);
+  return fs.existsSync(folderPath);
+});
+
+// ============================================
+// Item Metadata System (Eagle-style items/{id}/metadata.json)
+// ============================================
+
+function getItemsPaths() {
+  const paths = getStoragePaths();
+  return {
+    base: path.join(paths.base, 'items'),
+    indexFile: path.join(paths.base, 'items', 'index.json'),
+  };
+}
+
+ipcMain.handle('item:getItemsPath', () => {
+  const paths = getItemsPaths();
+  if (!fs.existsSync(paths.base)) {
+    fs.mkdirSync(paths.base, { recursive: true });
+  }
+  return paths.base;
+});
+
+ipcMain.handle('item:saveMetadata', async (event, itemId, metadata) => {
+  const paths = getItemsPaths();
+  const metadataPath = path.join(paths.base, itemId, 'metadata.json');
+  try {
+    if (!fs.existsSync(path.join(paths.base, itemId))) {
+      fs.mkdirSync(path.join(paths.base, itemId), { recursive: true });
+    }
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+    return { success: true, path: metadataPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('item:readMetadata', async (event, itemId) => {
+  const paths = getItemsPaths();
+  const metadataPath = path.join(paths.base, itemId, 'metadata.json');
+  try {
+    if (!fs.existsSync(metadataPath)) return null;
+    const content = fs.readFileSync(metadataPath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle('item:deleteMetadata', async (event, itemId) => {
+  const paths = getItemsPaths();
+  const itemDir = path.join(paths.base, itemId);
+  try {
+    if (fs.existsSync(itemDir)) {
+      fs.rmSync(itemDir, { recursive: true, force: true });
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('item:saveIndex', async (event, index) => {
+  const paths = getItemsPaths();
+  try {
+    fs.writeFileSync(paths.indexFile, JSON.stringify(index, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('item:readIndex', async () => {
+  const paths = getItemsPaths();
+  try {
+    if (!fs.existsSync(paths.indexFile)) return null;
+    const content = fs.readFileSync(paths.indexFile, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    return null;
+  }
+});
+
+// ============================================
+// File Move API (for moving files between folders)
+// ============================================
+
+ipcMain.handle('file:moveFile', async (event, sourcePath, targetPath) => {
+  try {
+    // Ensure target directory exists
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    // Check if source file exists
+    if (!fs.existsSync(sourcePath)) {
+      return { success: false, error: 'Source file does not exist' };
+    }
+
+    // If target file exists, remove it first
+    if (fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
+
+    // Move/copy the file
+    fs.copyFileSync(sourcePath, targetPath);
+
+    // Remove the source file if it's in our storage directory
+    const storagePaths = getStoragePaths();
+    const storageFilesDir = path.join(storagePaths.base, 'files');
+    if (sourcePath.startsWith(storageFilesDir)) {
+      fs.unlinkSync(sourcePath);
+    }
+
+    return { success: true, path: targetPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ============================================
+// Thumbnail Storage API
+// ============================================
+
+function getThumbnailsPath() {
+  const paths = getStoragePaths();
+  return {
+    base: path.join(paths.base, 'thumbnails'),
+    thumbnailsDir: path.join(paths.base, 'thumbnails', 'images'),
+  };
+}
+
+ipcMain.handle('fileStorage:saveThumbnail', async (event, itemId, dataUrl) => {
+  const paths = getThumbnailsPath();
+  try {
+    if (!fs.existsSync(paths.thumbnailsDir)) {
+      fs.mkdirSync(paths.thumbnailsDir, { recursive: true });
+    }
+
+    // Extract base64 data from data URL
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Save as PNG for quality
+    const thumbnailPath = path.join(paths.thumbnailsDir, `${itemId}.png`);
+    fs.writeFileSync(thumbnailPath, buffer);
+
+    return { success: true, path: thumbnailPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('fileStorage:readThumbnail', async (event, itemId) => {
+  const paths = getThumbnailsPath();
+  try {
+    const thumbnailPath = path.join(paths.thumbnailsDir, `${itemId}.png`);
+    if (!fs.existsSync(thumbnailPath)) {
+      return null;
+    }
+    const data = fs.readFileSync(thumbnailPath);
+    const dataUrl = `data:image/png;base64,${data.toString('base64')}`;
+    return { dataUrl, path: thumbnailPath };
+  } catch (error) {
+    return null;
+  }
+});
+
+ipcMain.handle('fileStorage:deleteThumbnail', async (event, itemId) => {
+  const paths = getThumbnailsPath();
+  try {
+    const thumbnailPath = path.join(paths.thumbnailsDir, `${itemId}.png`);
+    if (fs.existsSync(thumbnailPath)) {
+      fs.unlinkSync(thumbnailPath);
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
 // Get data directory path
 ipcMain.handle('storage:getDataPath', () => {

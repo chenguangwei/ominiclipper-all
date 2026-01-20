@@ -21,7 +21,7 @@ const translations: Record<string, Record<string, string>> = {};
 // English translations
 const en: Record<string, string> = {
   // App
-  'app.title': 'OmniClipper',
+  'app.title': 'OmniCollector',
   'app.subtitle': 'Resource Management',
 
   // Actions
@@ -141,7 +141,7 @@ const en: Record<string, string> = {
 // Chinese translations
 const zhCN: Record<string, string> = {
   // App
-  'app.title': 'OmniClipper',
+  'app.title': 'OmniCollector',
   'app.subtitle': '资源管理',
 
   // Actions

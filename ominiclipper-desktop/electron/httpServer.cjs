@@ -1,5 +1,5 @@
 /**
- * OmniClipper Desktop - Local HTTP Server
+ * OmniCollector Desktop - Local HTTP Server
  * Provides API for browser extension to sync items via IPC to renderer
  */
 
@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 3456;
-const PORT_FILE = '.omniclipper_port';
+const PORT_FILE = '.omnicollector_port';
 
 let server = null;
 
@@ -189,7 +189,7 @@ async function handleRequest(req, res) {
   try {
     // GET /api/ping - Health check
     if (pathname === '/api/ping' && req.method === 'GET') {
-      sendJson(res, 200, { status: 'ok', server: 'omniclipper-desktop' });
+      sendJson(res, 200, { status: 'ok', server: 'omnicollector-desktop' });
       return;
     }
 

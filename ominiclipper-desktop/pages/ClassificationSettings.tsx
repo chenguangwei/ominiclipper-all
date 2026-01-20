@@ -1,5 +1,5 @@
 /**
- * OmniClipper - Classification Settings Page
+ * OmniCollector - Classification Settings Page
  * 分类设置页面 - 配置规则引擎和 AI 分类器
  */
 

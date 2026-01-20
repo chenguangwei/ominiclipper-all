@@ -5,6 +5,8 @@ export enum ResourceType {
   WEB = 'WEB',
   IMAGE = 'IMAGE',
   MARKDOWN = 'MARKDOWN',
+  PPT = 'PPT',
+  EXCEL = 'EXCEL',
   UNKNOWN = 'UNKNOWN'
 }
 
@@ -54,6 +56,8 @@ export interface ResourceItem {
   embeddedData?: string; // Base64 encoded file content (for embed mode)
   originalPath?: string; // Original file path/name for reference
   source?: 'desktop' | 'browser-extension'; // Data source
+  thumbnailUrl?: string; // Cached thumbnail data URL for grid view
+  description?: string; // Auto-generated or manual description from content
 }
 
 // File system entry for file browser
@@ -92,4 +96,5 @@ export interface FilterState {
   color: string | null;
   folderId: string; // 'all', 'trash', 'recent', 'uncategorized', 'starred', etc. or UUID
   isStarred?: boolean; // Filter for starred items
+  typeFilter?: ResourceType | null; // Filter by resource type
 }

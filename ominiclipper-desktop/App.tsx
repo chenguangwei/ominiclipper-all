@@ -22,6 +22,8 @@ import { getClient } from './supabaseClient';
 import * as storageService from './services/storageService';
 import * as fileManager from './services/fileManager';
 import { t, getLocale, setLocale, getAvailableLocales } from './services/i18n';
+import * as thumbnailService from './services/thumbnailService';
+import * as contentExtractionService from './services/contentExtractionService';
 
 // Sorting types
 type SortType = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
@@ -82,6 +84,7 @@ const App: React.FC = () => {
   const [isFileDropDialogOpen, setIsFileDropDialogOpen] = useState(false);
   const [pendingDropFolder, setPendingDropFolder] = useState<string | null>(null);
   const [isFolderDropDialogOpen, setIsFolderDropDialogOpen] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null); // Track which folder is being dragged over
 
   // Color mode state
   const [colorMode, setColorModeState] = useState<ColorMode>('dark');
@@ -335,6 +338,11 @@ const App: React.FC = () => {
         return false;
       }
 
+      // Type filter
+      if (filterState.typeFilter && item.type !== filterState.typeFilter) {
+        return false;
+      }
+
       // Tag filter
       if (filterState.tagId) {
         if (!item.tags.includes(filterState.tagId)) {
@@ -463,6 +471,66 @@ const App: React.FC = () => {
     }
   };
 
+  // Handle files dropped directly on a folder in the sidebar
+  const handleDropOnFolder = async (folderId: string, files: FileList) => {
+    const file = files[0];
+    if (!file) return;
+
+    const electronFilePath = (file as any).path;
+    const type = getResourceTypeFromFile(file);
+
+    let path: string;
+    let localPath: string | undefined;
+    const originalPath = electronFilePath || file.name;
+
+    // Use embed mode by default for folder drops
+    if (electronFilePath && (window as any).electronAPI?.copyFileToStorage) {
+      try {
+        const result = await (window as any).electronAPI.copyFileToStorage(electronFilePath, file.name, customStoragePath);
+        if (result.success) {
+          localPath = result.targetPath;
+          path = result.targetPath;
+        } else {
+          throw new Error(result.error || 'Failed to copy file');
+        }
+      } catch (error) {
+        console.error('[App] Failed to copy file to storage:', error);
+        localPath = electronFilePath;
+        path = electronFilePath;
+      }
+    } else {
+      localPath = electronFilePath;
+      path = electronFilePath || URL.createObjectURL(file);
+    }
+
+    // Add item directly to the target folder
+    const newItem = await storageService.addItem({
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      type,
+      tags: [],
+      folderId: folderId,
+      color: 'tag-blue',
+      path,
+      localPath,
+      embeddedData: undefined,
+      originalPath,
+      storageMode: 'embed' as FileStorageMode,
+      fileSize: file.size,
+      mimeType: file.type,
+      isCloud: false,
+      isStarred: false,
+      contentSnippet: `Added to folder`,
+    });
+
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
+
+    // Generate thumbnail and description in background
+    if (newItem) {
+      generateItemMetadata(newItem.id, type, localPath || path);
+    }
+  };
+
   const handleFileDropConfirm = async (mode: FileStorageMode) => {
     if (!pendingDropFile) return;
 
@@ -511,11 +579,17 @@ const App: React.FC = () => {
     }
 
     // Create new resource from dropped file
-    storageService.addItem({
+    // Auto-assign to current folder if one is selected (and not a special folder)
+    const specialFolders = ['all', 'recent', 'starred', 'uncategorized', 'untagged', 'trash'];
+    const targetFolderId = (!specialFolders.includes(filterState.folderId) && filterState.folderId !== 'all')
+      ? filterState.folderId
+      : undefined;
+
+    const newItem = await storageService.addItem({
       title: file.name.replace(/\.[^/.]+$/, ''),
       type,
       tags: [],
-      folderId: undefined,
+      folderId: targetFolderId,
       color: 'tag-blue',
       path,
       localPath,
@@ -535,6 +609,11 @@ const App: React.FC = () => {
     setItems([...storageService.getItems()]);
     setPendingDropFile(null);
     setIsFileDropDialogOpen(false);
+
+    // Generate thumbnail and description in background
+    if (newItem) {
+      generateItemMetadata(newItem.id, type, localPath || path);
+    }
   };
 
   const handleFileDropClose = () => {
@@ -606,7 +685,16 @@ const App: React.FC = () => {
       }
 
       // Find or create folder based on classification
+      // Auto-assign to current folder if one is selected (and not a special folder)
+      const specialFolders = ['all', 'recent', 'starred', 'uncategorized', 'untagged', 'trash'];
       let folderId: string | undefined;
+
+      // If a real folder is selected, use it (unless classification overrides)
+      if (!specialFolders.includes(filterState.folderId) && filterState.folderId !== 'all') {
+        folderId = filterState.folderId;
+      }
+
+      // Classification can override the auto-assigned folder
       if (classification?.subfolder) {
         // Check if folder exists, if not create it
         const existingFolder = folders.find(f => f.name === classification.subfolder || f.name === classification.category);
@@ -693,22 +781,51 @@ const App: React.FC = () => {
       case 'pdf': return ResourceType.PDF;
       case 'doc': case 'docx': return ResourceType.WORD;
       case 'epub': return ResourceType.EPUB;
-      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp': return ResourceType.IMAGE;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'webp': case 'svg': case 'bmp': return ResourceType.IMAGE;
+      case 'md': case 'markdown': return ResourceType.MARKDOWN;
+      case 'ppt': case 'pptx': return ResourceType.PPT;
+      case 'xls': case 'xlsx': case 'csv': return ResourceType.EXCEL;
       default: return ResourceType.UNKNOWN;
+    }
+  };
+
+  // Generate thumbnail and description for a newly added item
+  const generateItemMetadata = async (itemId: string, type: ResourceType, filePath: string | undefined) => {
+    if (!filePath) return;
+
+    try {
+      // Generate thumbnail in background
+      const thumbnailDataUrl = await thumbnailService.generateAndSaveThumbnail(itemId, type, filePath);
+
+      // Generate description from content
+      const description = await contentExtractionService.generateAutoDescription(type, filePath, '');
+
+      // Update the item with generated metadata
+      if (thumbnailDataUrl || description) {
+        const updates: Partial<ResourceItem> = {};
+        if (thumbnailDataUrl) updates.thumbnailUrl = thumbnailDataUrl;
+        if (description) updates.description = description;
+
+        await storageService.updateItem(itemId, updates);
+        await storageService.flushPendingWrites();
+        setItems([...storageService.getItems()]);
+      }
+    } catch (error) {
+      console.error('[App] Failed to generate item metadata:', error);
     }
   };
 
   // Resource operations
   const handleAddResource = async (newItem: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (editingItem) {
-      const updated = storageService.updateItem(editingItem.id, newItem);
+      const updated = await storageService.updateItem(editingItem.id, newItem);
       if (updated) {
         await storageService.flushPendingWrites();
         setItems([...storageService.getItems()]);
       }
       setEditingItem(null);
     } else {
-      storageService.addItem(newItem);
+      await storageService.addItem(newItem);
       await storageService.flushPendingWrites();
       setItems([...storageService.getItems()]);
     }
@@ -723,7 +840,7 @@ const App: React.FC = () => {
       title: 'Delete Resource',
       message: `Are you sure you want to delete "${item?.title}"? This action cannot be undone.`,
       onConfirm: async () => {
-        storageService.deleteItem(id);
+        await storageService.deleteItem(id);
         await storageService.flushPendingWrites();
         setItems([...storageService.getItems()]);
         if (selectedItemId === id) {
@@ -745,6 +862,70 @@ const App: React.FC = () => {
   const handleToggleStar = async (id: string) => {
     const updatedItems = fileManager.toggleStar(items, id);
     storageService.saveItems(updatedItems);
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
+  };
+
+  // Inline tag editing handlers
+  const handleRemoveTag = async (itemId: string, tagId: string) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const updatedItem = {
+      ...item,
+      tags: item.tags.filter(t => t !== tagId),
+      updatedAt: new Date().toISOString()
+    };
+    storageService.updateItem(updatedItem);
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
+    storageService.updateTagCounts();
+    setTags(storageService.getTags());
+  };
+
+  const handleAddTagToItem = async (itemId: string, tagId: string) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item || item.tags.includes(tagId)) return;
+
+    const updatedItem = {
+      ...item,
+      tags: [...item.tags, tagId],
+      updatedAt: new Date().toISOString()
+    };
+    storageService.updateItem(updatedItem);
+    await storageService.flushPendingWrites();
+    setItems([...storageService.getItems()]);
+    storageService.updateTagCounts();
+    setTags(storageService.getTags());
+  };
+
+  const handleCreateTagInline = async (name: string): Promise<string | null> => {
+    // Check if tag already exists
+    const existing = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+
+    // Create new tag
+    const newTag: Tag = {
+      id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      color: 'tag-purple'
+    };
+    storageService.addTag(newTag);
+    setTags(storageService.getTags());
+    return newTag.id;
+  };
+
+  // Inline type editing handler
+  const handleChangeType = async (itemId: string, newType: ResourceType) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item || item.type === newType) return;
+
+    const updatedItem = {
+      ...item,
+      type: newType,
+      updatedAt: new Date().toISOString()
+    };
+    storageService.updateItem(updatedItem);
     await storageService.flushPendingWrites();
     setItems([...storageService.getItems()]);
   };
@@ -858,10 +1039,10 @@ The content includes substantial information that would be valuable for referenc
   // Folder operations
   const handleAddFolder = async (newFolder: Omit<Folder, 'id'>) => {
     if (editingFolder) {
-      storageService.updateFolder(editingFolder.id, newFolder);
+      await storageService.updateFolder(editingFolder.id, newFolder);
       setEditingFolder(null);
     } else {
-      storageService.addFolder(newFolder);
+      await storageService.addFolder(newFolder);
     }
     await storageService.flushPendingWrites();
     setFolders(storageService.getFolders());
@@ -874,7 +1055,7 @@ The content includes substantial information that would be valuable for referenc
       title: 'Delete Folder',
       message: `Are you sure you want to delete "${folder?.name}"? All subfolders will also be deleted. Resources will be moved to Uncategorized.`,
       onConfirm: async () => {
-        storageService.deleteFolder(id);
+        await storageService.deleteFolder(id);
         await storageService.flushPendingWrites();
         setFolders(storageService.getFolders());
         setItems([...storageService.getItems()]);
@@ -1068,11 +1249,28 @@ The content includes substantial information that would be valuable for referenc
         isSyncing={isSyncing}
         onImportExportClick={() => setIsImportExportOpen(true)}
         onSettingsClick={() => setIsSettingsOpen(true)}
+        tags={tags}
+        selectedTypeFilter={filterState.typeFilter || null}
+        onTypeFilterChange={(type) => setFilterState(prev => ({ ...prev, typeFilter: type }))}
+        selectedTagFilter={filterState.tagId}
+        onTagFilterChange={(tagId) => setFilterState(prev => ({ ...prev, tagId }))}
+        selectedColorFilter={filterState.color}
+        onColorFilterChange={(color) => setFilterState(prev => ({ ...prev, color }))}
       />
 
       {/* Active Filters Bar */}
-      {(filterState.tagId || filterState.color) && (
+      {(filterState.tagId || filterState.color || filterState.typeFilter) && (
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar bg-surface-tertiary/40 border-b border-[rgb(var(--color-border)/var(--border-opacity))] px-4 py-2 shrink-0">
+          {filterState.typeFilter && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/40 text-[11px] font-medium text-primary whitespace-nowrap animate-in fade-in slide-in-from-left-2">
+              <span>{filterState.typeFilter}</span>
+              <Icon
+                name="close"
+                className="text-[14px] cursor-pointer"
+                onClick={() => setFilterState(prev => ({ ...prev, typeFilter: null }))}
+              />
+            </div>
+          )}
           {filterState.tagId && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/40 text-[11px] font-medium text-primary whitespace-nowrap animate-in fade-in slide-in-from-left-2">
               <span>{getTagName(filterState.tagId)}</span>
@@ -1124,6 +1322,7 @@ The content includes substantial information that would be valuable for referenc
             setIsCreateFolderOpen(true);
           }}
           onCreateTag={() => setIsCreateTagOpen(true)}
+          onDropOnFolder={handleDropOnFolder}
           colorMode={colorMode}
           onDeleteFolder={handleDeleteFolder}
           onDeleteTag={handleDeleteTag}
@@ -1151,6 +1350,8 @@ The content includes substantial information that would be valuable for referenc
               getTagName={getTagName}
               colorMode={colorMode}
               onOpen={handleOpenItem}
+              onDelete={handleDeleteResource}
+              onEdit={handleEditResource}
             />
             {selectedItemId && (
               <div className={`w-[350px] border-l hidden xl:block ${colorMode === 'light' ? 'border-gray-200' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>
@@ -1164,6 +1365,11 @@ The content includes substantial information that would be valuable for referenc
                   isGeneratingSummary={isGeneratingSummary}
                   onOpenDocument={handleOpenDocument}
                   colorMode={colorMode}
+                  availableTags={tags}
+                  onRemoveTag={handleRemoveTag}
+                  onAddTag={handleAddTagToItem}
+                  onCreateTag={handleCreateTagInline}
+                  onChangeType={handleChangeType}
                 />
               </div>
             )}
@@ -1180,6 +1386,8 @@ The content includes substantial information that would be valuable for referenc
               onSortChange={setSortType}
               colorMode={colorMode}
               onOpen={handleOpenItem}
+              onDelete={handleDeleteResource}
+              onEdit={handleEditResource}
             />
             <div className="hidden md:flex flex-1">
               <PreviewPane
@@ -1192,6 +1400,11 @@ The content includes substantial information that would be valuable for referenc
                 isGeneratingSummary={isGeneratingSummary}
                 onOpenDocument={handleOpenDocument}
                 colorMode={colorMode}
+                availableTags={tags}
+                onRemoveTag={handleRemoveTag}
+                onAddTag={handleAddTagToItem}
+                onCreateTag={handleCreateTagInline}
+                onChangeType={handleChangeType}
               />
             </div>
           </>

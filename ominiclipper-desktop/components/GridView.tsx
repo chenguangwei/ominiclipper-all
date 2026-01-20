@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ResourceItem, ResourceType } from '../types';
 import Icon from './Icon';
+import ContextMenu from './ContextMenu';
 
 interface GridViewProps {
   items: ResourceItem[];
@@ -9,15 +10,57 @@ interface GridViewProps {
   getTagName: (id: string) => string;
   colorMode?: 'dark' | 'light' | 'system';
   onOpen?: (item: ResourceItem) => void;
+  onDelete?: (id: string) => void;
+  onEdit?: (item: ResourceItem) => void;
 }
 
-const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTagName, colorMode = 'dark', onOpen }) => {
+const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTagName, colorMode = 'dark', onOpen, onDelete, onEdit }) => {
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [contextMenuTarget, setContextMenuTarget] = useState<ResourceItem | null>(null);
   const handleDoubleClick = (item: ResourceItem) => {
     if (onOpen) {
       onOpen(item);
     }
   };
   const isLight = colorMode === 'light';
+
+  const handleContextMenu = (e: React.MouseEvent, item: ResourceItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuTarget(item);
+    setShowContextMenu(true);
+  };
+
+  const handleCloseContextMenu = () => {
+    setShowContextMenu(false);
+    setContextMenuTarget(null);
+  };
+
+  const handleRevealInFinder = () => {
+    if (contextMenuTarget && contextMenuTarget.localPath && (window as any).electronAPI?.showItemInFolder) {
+      (window as any).electronAPI.showItemInFolder(contextMenuTarget.localPath);
+    }
+  };
+
+  const handleDelete = () => {
+    if (contextMenuTarget && onDelete) {
+      onDelete(contextMenuTarget.id);
+    }
+  };
+
+  const handleEdit = () => {
+    if (contextMenuTarget && onEdit) {
+      onEdit(contextMenuTarget);
+    }
+  };
+
+  const handleOpen = () => {
+    if (contextMenuTarget && onOpen) {
+      onOpen(contextMenuTarget);
+    }
+  };
 
   const getIconForType = (type: ResourceType) => {
     switch (type) {
@@ -26,22 +69,31 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
       case ResourceType.EPUB: return <Icon name="auto_stories" className="text-epub-purple text-[40px]" />;
       case ResourceType.WEB: return <Icon name="language" className="text-tag-green text-[40px]" />;
       case ResourceType.IMAGE: return <Icon name="image" className="text-tag-yellow text-[40px]" />;
+      case ResourceType.MARKDOWN: return <Icon name="article" className="text-tag-blue text-[40px]" />;
+      case ResourceType.PPT: return <Icon name="slideshow" className="text-tag-orange text-[40px]" />;
+      case ResourceType.EXCEL: return <Icon name="table_chart" className="text-tag-green text-[40px]" />;
       default: return <Icon name="article" className={isLight ? 'text-gray-400 text-[40px]' : 'text-slate-400 text-[40px]'} />;
     }
   };
 
-  // Helper to get image source path
-  const getImageSrc = (item: ResourceItem): string | null => {
-    // Use embeddedData if available (Base64)
-    if (item.embeddedData) {
-      return item.embeddedData;
+  // Helper to get thumbnail source - supports all file types with cached thumbnails
+  const getThumbnailSrc = (item: ResourceItem): string | null => {
+    // First priority: cached thumbnail (generated for all types)
+    if (item.thumbnailUrl) {
+      return item.thumbnailUrl;
     }
-    // Use localPath for Electron reference mode
-    if (item.localPath) {
-      return item.localPath;
+    // For images: use embedded data or file path directly
+    if (item.type === ResourceType.IMAGE) {
+      if (item.embeddedData) {
+        return item.embeddedData;
+      }
+      if (item.localPath) {
+        // 使用正确的 file:// 协议，或者使用 data URL（如果可能）
+        return item.localPath.startsWith('file://') ? item.localPath : `file://${item.localPath}`;
+      }
+      return item.path || null;
     }
-    // Fall back to path
-    return item.path || null;
+    return null;
   };
 
   return (
@@ -52,28 +104,25 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
               key={item.id}
               onClick={() => onSelect(item.id)}
               onDoubleClick={() => handleDoubleClick(item)}
+              onContextMenu={(e) => handleContextMenu(e, item)}
               className={`group flex flex-col rounded-xl p-4 transition-all duration-200 cursor-pointer border ${selectedId === item.id ? 'bg-primary/20 border-primary/50 ring-2 ring-primary/30' : isLight ? 'bg-white border-gray-200 hover:bg-gray-50 hover:scale-[1.02] hover:shadow-lg' : 'bg-[#252525]/40 border-white/5 hover:bg-[#252525] hover:scale-[1.02] hover:shadow-lg'}`}
             >
               <div className={`aspect-[4/3] w-full rounded-lg mb-3 flex items-center justify-center relative overflow-hidden ${isLight ? 'bg-gray-100' : 'bg-black/20'}`}>
-                {item.type === ResourceType.IMAGE ? (
-                  // Image thumbnail display
-                  (() => {
-                    const src = getImageSrc(item);
-                    return src ? (
-                      <img
-                        src={src}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // Fall back to icon on error
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : getIconForType(item.type);
-                  })()
-                ) : (
-                  getIconForType(item.type)
-                )}
+                {(() => {
+                  // Use thumbnail for all types if available
+                  const thumbnailSrc = getThumbnailSrc(item);
+                  return thumbnailSrc ? (
+                    <img
+                      src={thumbnailSrc}
+                      alt={item.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fall back to icon on error
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : getIconForType(item.type);
+                })()}
                 {item.isCloud && (
                   <div className="absolute top-2 right-2 bg-black/40 backdrop-blur rounded-full p-1">
                      <Icon name="cloud" className="text-[12px] text-white/70" />
@@ -95,6 +144,19 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
             </div>
         ))}
       </div>
+      {showContextMenu && (
+        <ContextMenu
+          x={contextMenuPosition.x}
+          y={contextMenuPosition.y}
+          isVisible={showContextMenu}
+          onClose={handleCloseContextMenu}
+          onOpen={handleOpen}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRevealInFinder={handleRevealInFinder}
+          colorMode={colorMode}
+        />
+      )}
     </div>
   );
 };

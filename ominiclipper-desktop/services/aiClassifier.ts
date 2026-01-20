@@ -1,5 +1,5 @@
 /**
- * OmniClipper - AI Classifier Service
+ * OmniCollector - AI Classifier Service
  * AI 智能分类器 - 使用 LLM 进行智能文件分类
  */
 

@@ -60,7 +60,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if ((window as any).electronAPI?.getUserDataPath) {
       return (window as any).electronAPI.getUserDataPath();
     }
-    return 'Application Data/OmniClipper';
+    return 'Application Data/OmniCollector';
   };
 
   return (
@@ -166,9 +166,9 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <Icon name="library_books" className="text-[20px] text-primary" />
               </div>
               <div>
-                <h3 className="text-sm font-medium text-content">OmniClipper</h3>
+                <h3 className="text-sm font-medium text-content">OmniCollector</h3>
                 <p className="text-xs text-content-secondary">
-                  Version 1.0.0 - Your personal clipper manager
+                  Version 1.0.0 - Your personal resource manager
                 </p>
               </div>
             </div>

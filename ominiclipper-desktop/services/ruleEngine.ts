@@ -1,5 +1,5 @@
 /**
- * OmniClipper - Rule Engine Service
+ * OmniCollector - Rule Engine Service
  * 规则引擎 - 用于基于规则的文件分类
  */
 
@@ -557,4 +557,60 @@ class RuleEngine {
 
 // 导出单例
 export const ruleEngine = new RuleEngine();
+
+/**
+ * 对单个文件进行规则分类
+ * @param fileName 文件名
+ * @param filePath 文件路径
+ * @param type 资源类型
+ * @returns 分类结果或 null
+ */
+export const classifyFile = async (
+  fileName: string,
+  filePath: string,
+  type: string
+): Promise<{
+  category: string;
+  subfolder: string;
+  confidence: number;
+  reasoning: string;
+  suggestedTags: string[];
+} | null> => {
+  // 创建一个临时 ResourceItem 对象用于规则匹配
+  const tempItem: ResourceItem = {
+    id: 'temp-classify',
+    title: fileName.replace(/\.[^/.]+$/, ''),
+    type: type as any,
+    tags: [],
+    folderId: undefined,
+    color: 'tag-blue',
+    path: filePath,
+    localPath: filePath,
+    originalPath: filePath,
+    storageMode: 'reference',
+    fileSize: 0,
+    mimeType: '',
+    isCloud: false,
+    isStarred: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 使用规则引擎分类
+  const results = ruleEngine.classify([tempItem]);
+  const result = results[0];
+
+  if (result && result.rule) {
+    return {
+      category: result.rule.name,
+      subfolder: result.rule.action.targetFolder || '',
+      confidence: result.confidence || 1.0,
+      reasoning: result.rule.description || `Matched rule: ${result.rule.name}`,
+      suggestedTags: result.suggestedTags || result.rule.action.tags || [],
+    };
+  }
+
+  return null;
+};
+
 export default ruleEngine;

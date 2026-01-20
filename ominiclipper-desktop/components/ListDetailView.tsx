@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ResourceItem, ResourceType, ColorMode } from '../types';
 import Icon from './Icon';
+import ContextMenu from './ContextMenu';
 
 type SortType = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc';
 
@@ -13,6 +14,8 @@ interface ListDetailViewProps {
   onSortChange?: (sort: SortType) => void;
   colorMode?: ColorMode;
   onOpen?: (item: ResourceItem) => void;
+  onDelete?: (id: string) => void;
+  onEdit?: (item: ResourceItem) => void;
 }
 
 const ListDetailView: React.FC<ListDetailViewProps> = ({
@@ -24,9 +27,51 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
   onSortChange,
   colorMode = 'dark',
   onOpen,
+  onDelete,
+  onEdit,
 }) => {
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [contextMenuTarget, setContextMenuTarget] = useState<ResourceItem | null>(null);
   const isLight = colorMode === 'light';
+
+  const handleContextMenu = (e: React.MouseEvent, item: ResourceItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuTarget(item);
+    setShowContextMenu(true);
+  };
+
+  const handleCloseContextMenu = () => {
+    setShowContextMenu(false);
+    setContextMenuTarget(null);
+  };
+
+  const handleRevealInFinder = () => {
+    if (contextMenuTarget && contextMenuTarget.localPath && (window as any).electronAPI?.showItemInFolder) {
+      (window as any).electronAPI.showItemInFolder(contextMenuTarget.localPath);
+    }
+  };
+
+  const handleDelete = () => {
+    if (contextMenuTarget && onDelete) {
+      onDelete(contextMenuTarget.id);
+    }
+  };
+
+  const handleEdit = () => {
+    if (contextMenuTarget && onEdit) {
+      onEdit(contextMenuTarget);
+    }
+  };
+
+  const handleOpen = () => {
+    if (contextMenuTarget && onOpen) {
+      onOpen(contextMenuTarget);
+    }
+  };
 
   const handleDoubleClick = (item: ResourceItem) => {
     if (onOpen) {
@@ -126,93 +171,116 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
       }`;
 
   return (
-    <div className={containerClass}>
-      <div className={headerClass}>
-        <span className={headerTextClass}>{items.length} Items</span>
-        <div className="flex items-center gap-3 relative">
-          <div className="relative">
-            <button
-              onClick={() => setShowSortMenu(!showSortMenu)}
-              className={sortButtonClass}
-            >
-              <Icon name="sort" className="text-[16px]" />
-              <span>{getSortLabel()}</span>
-            </button>
+    <>
+      <div className={containerClass}>
+        <div className={headerClass}>
+          <span className={headerTextClass}>{items.length} Items</span>
+          <div className="flex items-center gap-3 relative">
+            <div className="relative">
+              <button
+                onClick={() => setShowSortMenu(!showSortMenu)}
+                className={sortButtonClass}
+              >
+                <Icon name="sort" className="text-[16px]" />
+                <span>{getSortLabel()}</span>
+              </button>
 
-            {/* Sort Menu */}
-            {showSortMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowSortMenu(false)} />
-                <div className={sortMenuClass}>
-                  {[
-                    { value: 'date-desc' as SortType, label: 'Newest First' },
-                    { value: 'date-asc' as SortType, label: 'Oldest First' },
-                    { value: 'name-asc' as SortType, label: 'Name A-Z' },
-                    { value: 'name-desc' as SortType, label: 'Name Z-A' },
-                  ].map(option => (
-                    <button
-                      key={option.value}
-                      onClick={() => {
-                        onSortChange?.(option.value);
-                        setShowSortMenu(false);
-                      }}
-                      className={sortMenuItemClass(sortType === option.value)}
-                    >
-                      {sortType === option.value && <Icon name="check" className="text-sm" />}
-                      <span className={sortType === option.value ? '' : isLight ? 'ml-5 text-gray-500' : 'ml-5'}>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+              {/* Sort Menu */}
+              {showSortMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowSortMenu(false)} />
+                  <div className={sortMenuClass}>
+                    {[
+                      { value: 'date-desc' as SortType, label: 'Newest First' },
+                      { value: 'date-asc' as SortType, label: 'Oldest First' },
+                      { value: 'name-asc' as SortType, label: 'Name A-Z' },
+                      { value: 'name-desc' as SortType, label: 'Name Z-A' },
+                    ].map(option => (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          onSortChange?.(option.value);
+                          setShowSortMenu(false);
+                        }}
+                        className={sortMenuItemClass(sortType === option.value)}
+                      >
+                        {sortType === option.value && <Icon name="check" className="text-sm" />}
+                        <span className={sortType === option.value ? '' : isLight ? 'ml-5 text-gray-500' : 'ml-5'}>{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar">
-        {items.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center h-full ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>
-            <Icon name="folder_open" className="text-[48px] opacity-30 mb-2" />
-            <span className="text-sm">No items found</span>
-          </div>
-        ) : (
-          items.map(item => (
-            <div
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              onDoubleClick={() => handleDoubleClick(item)}
-              className={itemClass(selectedId === item.id)}
-            >
-              {isLight && selectedId === item.id && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#007aff]"></div>
-              )}
-              {!isLight && (
-                <div className={`absolute left-0 top-0 bottom-0 w-1 bg-${item.color}`}></div>
-              )}
-              <div className="flex gap-3">
-                <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center border ${getBgColorForType(item.type, selectedId === item.id)}`}>
-                  {getIconForType(item.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className={itemTitleClass(selectedId === item.id)}>{item.title}</h4>
-                  <p className={itemDateClass}>
-                    {new Date(item.updatedAt).toLocaleDateString()}
-                    {item.isCloud && <Icon name="cloud" className="text-[10px]" />}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {item.tags.map(tagId => (
-                  <span key={tagId} className={tagClass}>
-                    {getTagName(tagId)}
-                  </span>
-                ))}
-              </div>
+        <div className="flex-1 overflow-y-auto no-scrollbar">
+          {items.length === 0 ? (
+            <div className={`flex flex-col items-center justify-center h-full ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>
+              <Icon name="folder_open" className="text-[48px] opacity-30 mb-2" />
+              <span className="text-sm">No items found</span>
             </div>
-          ))
-        )}
+          ) : (
+            items.map(item => (
+              <div
+                key={item.id}
+                onClick={() => onSelect(item.id)}
+                onDoubleClick={() => handleDoubleClick(item)}
+                onContextMenu={(e) => handleContextMenu(e, item)}
+                className={itemClass(selectedId === item.id)}
+              >
+                {isLight && selectedId === item.id && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#007aff]"></div>
+                )}
+                {!isLight && (
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-${item.color}`}></div>
+                )}
+                <div className="flex gap-3">
+                  <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center border ${getBgColorForType(item.type, selectedId === item.id)}`}>
+                    {getIconForType(item.type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className={itemTitleClass(selectedId === item.id)}>{item.title}</h4>
+                    {/* Description snippet - show first 100 chars */}
+                    {(item.description || item.contentSnippet) && (
+                      <p className={`text-[11px] ${isLight ? 'text-gray-400' : 'text-content-secondary'} line-clamp-2 mt-0.5 leading-relaxed`}>
+                        {(item.description || item.contentSnippet || '').slice(0, 100)}
+                        {(item.description || item.contentSnippet || '').length > 100 ? '...' : ''}
+                      </p>
+                    )}
+                    <p className={itemDateClass}>
+                      {new Date(item.updatedAt).toLocaleDateString()}
+                      {item.isCloud && <Icon name="cloud" className="text-[10px]" />}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {item.tags.map(tagId => (
+                    <span key={tagId} className={tagClass}>
+                      {getTagName(tagId)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
-    </div>
+      {showContextMenu && (
+        <ContextMenu
+          x={contextMenuPosition.x}
+          y={contextMenuPosition.y}
+          isVisible={showContextMenu}
+          onClose={handleCloseContextMenu}
+          onOpen={handleOpen}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRevealInFinder={handleRevealInFinder}
+          colorMode={colorMode}
+        />
+      )}
+    </>
   );
 };
 

@@ -37,7 +37,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
 
       if (exportFormat === 'json') {
         data = storageService.exportData();
-        filename = `omniclipper-export-${new Date().toISOString().split('T')[0]}.json`;
+        filename = `omnicollector-export-${new Date().toISOString().split('T')[0]}.json`;
         mimeType = 'application/json';
       } else {
         // CSV export
@@ -55,7 +55,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
           item.path || ''
         ]);
         data = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-        filename = `omniclipper-export-${new Date().toISOString().split('T')[0]}.csv`;
+        filename = `omnicollector-export-${new Date().toISOString().split('T')[0]}.csv`;
         mimeType = 'text/csv';
       }
 

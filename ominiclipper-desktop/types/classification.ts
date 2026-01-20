@@ -1,5 +1,5 @@
 /**
- * OmniClipper - File Classification Types
+ * OmniCollector - File Classification Types
  */
 
 // 分类方式

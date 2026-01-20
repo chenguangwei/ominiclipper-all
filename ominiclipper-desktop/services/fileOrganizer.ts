@@ -1,5 +1,5 @@
 /**
- * OmniClipper - File Organizer Service
+ * OmniCollector - File Organizer Service
  * 文件整理服务 - 根据分类结果自动整理文件
  */
 
@@ -15,7 +15,7 @@ import * as fileManager from './fileManager';
 
 // 默认配置
 const DEFAULT_CONFIG: FileOrganizerConfig = {
-  baseFolder: 'Documents/OmniClipper',
+  baseFolder: 'Documents/OmniCollector',
   createSubfolders: true,
   handleDuplicates: 'rename',
   preserveOriginalPath: false,
@@ -206,38 +206,75 @@ class FileOrganizer {
   }
 
   /**
+   * 获取文件名（纯浏览器实现）
+   */
+  private getBasename(filePath: string): string {
+    const parts = filePath.split(/[/\\]/);
+    return parts[parts.length - 1] || filePath;
+  }
+
+  /**
+   * 获取文件扩展名（纯浏览器实现）
+   */
+  private getExtname(filePath: string): string {
+    const lastDot = filePath.lastIndexOf('.');
+    return lastDot === -1 ? '' : filePath.slice(lastDot);
+  }
+
+  /**
+   * 检查是否在 Electron 环境中
+   */
+  private isElectron(): boolean {
+    return typeof window !== 'undefined' && !!(window as any).electronAPI;
+  }
+
+  /**
    * 移动本地文件
    */
   private async moveLocalFile(
     sourcePath: string,
     targetFolder: string
   ): Promise<string> {
-    const fs = require('fs');
-    const path = require('path');
-
-    const fileName = path.basename(sourcePath);
-    const newPath = path.join(targetFolder, fileName);
-
-    // 确保目标目录存在
-    const targetDir = path.dirname(newPath);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+    // 检查是否在 Electron 环境中
+    if (!this.isElectron()) {
+      console.warn('[FileOrganizer] Not in Electron environment, cannot move files');
+      return sourcePath;
     }
 
-    // 处理重复文件名
-    let finalPath = newPath;
-    let counter = 1;
-    while (fs.existsSync(finalPath)) {
-      const ext = path.extname(fileName);
-      const baseName = path.basename(fileName, ext);
-      finalPath = path.join(targetDir, `${baseName}_${counter}${ext}`);
-      counter++;
+    const electronAPI = (window as any).electronAPI;
+
+    const fileName = this.getBasename(sourcePath);
+    const newPath = `${targetFolder}/${fileName}`;
+
+    try {
+      // 使用 IPC 调用主进程移动文件
+      // API 路径: electronAPI.fileAPI.moveFile
+      if (electronAPI.fileAPI?.moveFile) {
+        const result = await electronAPI.fileAPI.moveFile(sourcePath, newPath);
+        if (result?.success) {
+          return result.newPath || newPath;
+        }
+        throw new Error(result?.error || 'Failed to move file');
+      }
+
+      // 备用方案：使用 copyFileToStorage + 手动处理
+      if (electronAPI.copyFileToStorage) {
+        const copyResult = await electronAPI.copyFileToStorage(sourcePath, this.getBasename(newPath));
+        if (copyResult?.success) {
+          // 注意：这不会删除原文件，仅复制
+          console.warn('[FileOrganizer] Used copy instead of move - original file preserved');
+          return copyResult.targetPath || newPath;
+        }
+        throw new Error(copyResult?.error || 'Failed to copy file');
+      }
+
+      // 如果都没有，记录警告并返回原路径
+      console.warn('[FileOrganizer] No file move/copy API available');
+      return sourcePath;
+    } catch (error) {
+      console.error('[FileOrganizer] Error moving file:', error);
+      throw error;
     }
-
-    // 移动文件
-    fs.renameSync(sourcePath, finalPath);
-
-    return finalPath;
   }
 
   /**

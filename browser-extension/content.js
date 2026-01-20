@@ -731,61 +731,9 @@ Summary:`;
   });
 
   /**
-   * Inject capture button into page
-   */
-  function injectCaptureButton() {
-    if (document.getElementById('omniclipper-capture-btn')) return;
-
-    const button = document.createElement('button');
-    button.id = 'omniclipper-capture-btn';
-    button.innerHTML = '📌';
-    button.title = 'Capture with OmniClipper';
-    button.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 20px;
-      z-index: 999999;
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-      transition: all 0.3s ease;
-    `;
-
-    button.addEventListener('click', async () => {
-      const data = capturePage();
-      try {
-        await chrome.runtime.sendMessage({ type: 'OPEN_POPUP_WITH_DATA', data });
-      } catch (e) {
-        console.log('OmniClipper: Could not open popup');
-      }
-    });
-
-    button.addEventListener('mouseenter', () => {
-      button.style.transform = 'scale(1.1)';
-    });
-
-    button.addEventListener('mouseleave', () => {
-      button.style.transform = 'scale(1)';
-    });
-
-    document.body.appendChild(button);
-  }
-
-  /**
    * Initialize content script
    */
   function init() {
-    chrome.storage.local.get(['showCaptureButton'], (result) => {
-      if (result.showCaptureButton !== false) {
-        setTimeout(injectCaptureButton, 2000);
-      }
-    });
 
     chrome.runtime.onMessage.addListener((message) => {
       if (message.type === 'CONTEXT_MENU_CLICK') {

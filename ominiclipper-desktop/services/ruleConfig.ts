@@ -1,5 +1,5 @@
 /**
- * OmniClipper - Rule Configuration Service
+ * OmniCollector - Rule Configuration Service
  * 规则配置管理 - 负责规则的持久化和配置管理
  */
 
@@ -75,7 +75,7 @@ class RuleConfigService {
     // 默认配置
     return {
       rules: [],
-      defaultFolder: 'Documents/OmniClipper',
+      defaultFolder: 'Documents/OmniCollector',
       autoCreateFolder: true
     };
   }

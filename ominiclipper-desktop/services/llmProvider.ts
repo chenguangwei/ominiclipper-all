@@ -1,5 +1,5 @@
 /**
- * OmniClipper - LLM Provider Service
+ * OmniCollector - LLM Provider Service
  * LLM 提供商管理 - 支持多种 LLM API
  */
 

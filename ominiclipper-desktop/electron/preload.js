@@ -1,5 +1,5 @@
 /**
- * OmniClipper Desktop - Electron Preload Script
+ * OmniCollector Desktop - Electron Preload Script
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
@@ -92,6 +92,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Read item metadata
     readItemMetadata: (itemId) => ipcRenderer.invoke('fileStorage:readItemMetadata', itemId),
+
+    // Save thumbnail
+    saveThumbnail: (itemId, dataUrl) =>
+      ipcRenderer.invoke('fileStorage:saveThumbnail', itemId, dataUrl),
+
+    // Read thumbnail
+    readThumbnail: (itemId) =>
+      ipcRenderer.invoke('fileStorage:readThumbnail', itemId),
+
+    // Delete thumbnail
+    deleteThumbnail: (itemId) =>
+      ipcRenderer.invoke('fileStorage:deleteThumbnail', itemId),
   },
 
   // ============================================
@@ -141,6 +153,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Get backup directory path
     getBackupPath: () => ipcRenderer.invoke('backup:getBackupPath'),
+  },
+
+  // ============================================
+  // Folder Directory API (Eagle-style folders)
+  // ============================================
+  folderAPI: {
+    // Get the folders base path
+    getFoldersPath: () => ipcRenderer.invoke('folder:getFoldersPath'),
+
+    // Create a physical folder
+    createFolder: (folderId) => ipcRenderer.invoke('folder:create', folderId),
+
+    // Delete a physical folder
+    deleteFolder: (folderId) => ipcRenderer.invoke('folder:delete', folderId),
+
+    // Check if folder exists
+    folderExists: (folderId) => ipcRenderer.invoke('folder:exists', folderId),
+  },
+
+  // ============================================
+  // Item Metadata API (Eagle-style items/{id}/metadata.json)
+  // ============================================
+  itemAPI: {
+    // Get the items base path
+    getItemsPath: () => ipcRenderer.invoke('item:getItemsPath'),
+
+    // Save item metadata to file
+    saveItemMetadata: (itemId, metadata) => ipcRenderer.invoke('item:saveMetadata', itemId, metadata),
+
+    // Read item metadata from file
+    readItemMetadata: (itemId) => ipcRenderer.invoke('item:readMetadata', itemId),
+
+    // Delete item metadata file
+    deleteItemMetadata: (itemId) => ipcRenderer.invoke('item:deleteMetadata', itemId),
+
+    // Save items index
+    saveItemsIndex: (index) => ipcRenderer.invoke('item:saveIndex', index),
+
+    // Read items index
+    readItemsIndex: () => ipcRenderer.invoke('item:readIndex'),
+  },
+
+  // ============================================
+  // File Move API (for moving files between folders)
+  // ============================================
+  fileAPI: {
+    // Move a file from source path to target path
+    moveFile: (sourcePath, targetPath) => ipcRenderer.invoke('file:moveFile', sourcePath, targetPath),
   },
 });
 

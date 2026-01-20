@@ -1,5 +1,5 @@
 /**
- * OmniClipper - Auto Classify Dialog
+ * OmniCollector - Auto Classify Dialog
  * 自动分类对话框 - 显示分类预览并允许用户确认或修改
  */
 

@@ -10,6 +10,8 @@ import { formatDate, formatRelativeTime } from '../services/i18n';
 import * as docxPreview from 'docx-preview';
 import Markdown from 'react-markdown';
 import * as pdfjsLib from 'pdfjs-dist';
+import TagSelector from './TagSelector';
+import TypeDropdown from './TypeDropdown';
 
 // Configure PDF.js worker (required for PDF.js to work)
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -60,6 +62,12 @@ interface PreviewPaneProps {
   isGeneratingSummary?: boolean;
   onOpenDocument?: (item: ResourceItem) => void;
   colorMode?: ColorMode;
+  // Inline editing props
+  availableTags?: { id: string; name: string; color?: string; count?: number }[];
+  onRemoveTag?: (itemId: string, tagId: string) => void;
+  onAddTag?: (itemId: string, tagId: string) => void;
+  onCreateTag?: (name: string) => Promise<string | null>;
+  onChangeType?: (itemId: string, newType: ResourceType) => void;
 }
 
 const PreviewPane: React.FC<PreviewPaneProps> = ({
@@ -72,6 +80,12 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   isGeneratingSummary = false,
   onOpenDocument,
   colorMode = 'dark',
+  // Inline editing props
+  availableTags = [],
+  onRemoveTag,
+  onAddTag,
+  onCreateTag,
+  onChangeType,
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'preview'>('details');
   const isLight = colorMode === 'light';
@@ -657,7 +671,16 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
                 <div className="pt-2 flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-[10px] font-bold tracking-wider uppercase ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>{getKindLabel()}</span>
+                    {/* Inline type editor */}
+                    {onChangeType ? (
+                      <TypeDropdown
+                        currentType={item.type}
+                        onChangeType={(newType) => onChangeType(item.id, newType)}
+                        colorMode={colorMode}
+                      />
+                    ) : (
+                      <span className={`text-[10px] font-bold tracking-wider uppercase ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>{getKindLabel()}</span>
+                    )}
                     {item.isCloud && (
                       <Icon name="cloud" className="text-[12px] text-sky-500" />
                     )}
@@ -680,19 +703,45 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 mb-6 ml-[104px]">
+              <div className="flex flex-wrap items-center gap-2 mb-6 ml-[104px]">
                 {item.tags.map(tagId => (
                   <span
                     key={tagId}
-                    className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs ${
+                    className={`group flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs ${
                       isLight
                         ? 'bg-gray-100 text-gray-600 border border-gray-200'
                         : 'bg-white/5 border border-[rgb(var(--color-border)/0.1)] text-content hover:bg-white/10'
-                    } transition-colors cursor-pointer`}
+                    } transition-colors`}
                   >
                     {getTagName(tagId)}
+                    {/* Inline delete button */}
+                    {onRemoveTag && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveTag(item.id, tagId);
+                        }}
+                        className={`ml-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+                          isLight ? 'text-gray-400 hover:text-gray-600' : 'text-content-secondary hover:text-content'
+                        }`}
+                        title="Remove tag"
+                      >
+                        <Icon name="close" className="text-[10px]" />
+                      </button>
+                    )}
                   </span>
                 ))}
+
+                {/* Add tag button */}
+                {onAddTag && (
+                  <TagSelector
+                    availableTags={availableTags}
+                    selectedTags={item.tags}
+                    onAddTag={(tagId) => onAddTag(item.id, tagId)}
+                    onCreateTag={onCreateTag}
+                    colorMode={colorMode}
+                  />
+                )}
 
                 {item.color && (
                   <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${

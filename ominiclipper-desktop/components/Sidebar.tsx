@@ -18,6 +18,7 @@ interface SidebarProps {
   onCreateTag: () => void;
   onDeleteFolder: (id: string) => void;
   onDeleteTag: (id: string) => void;
+  onDropOnFolder?: (folderId: string, files: FileList) => void; // Callback when files dropped on folder
   colorMode?: ColorMode;
 }
 
@@ -37,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateTag,
   onDeleteFolder,
   onDeleteTag,
+  onDropOnFolder,
   colorMode = 'dark',
 }) => {
   void _activeColor;
@@ -44,6 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const isLight = colorMode === 'light';
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
   const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,7 +84,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     onClick: () => void,
     count?: number,
     iconColor?: string,
-    onContextMenu?: (e: React.MouseEvent) => void
+    onContextMenu?: (e: React.MouseEvent) => void,
+    isDropTarget?: boolean
   ) => {
     const hasChildren = React.Children.count(children) > 0;
     const isExpanded = expandedIds.has(id);
@@ -91,7 +95,28 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div
           onClick={onClick}
           onContextMenu={onContextMenu}
-          className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${isActive ? 'bg-primary text-white' : 'text-content-secondary hover:bg-surface-tertiary hover:text-content'}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (isDropTarget) {
+              e.dataTransfer.dropEffect = 'copy';
+              setDragOverFolderId(id);
+            }
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            if (dragOverFolderId === id) {
+              setDragOverFolderId(null);
+            }
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOverFolderId(null);
+            if (isDropTarget && onDropOnFolder && e.dataTransfer.files.length > 0) {
+              onDropOnFolder(id, e.dataTransfer.files);
+            }
+          }}
+          className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${isActive ? 'bg-primary text-white' : 'text-content-secondary hover:bg-surface-tertiary hover:text-content'} ${isDropTarget && dragOverFolderId === id ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
         >
           {/* Arrow */}
           <div
@@ -134,7 +159,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         },
         undefined,
         undefined,
-        (e) => handleContextMenu('folder', folder.id, e)
+        (e) => handleContextMenu('folder', folder.id, e),
+        true // Enable drop target
       )
     ));
   };
@@ -168,7 +194,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="w-6 h-6 rounded bg-primary flex items-center justify-center mr-2 shadow-sm">
             <Icon name="library_books" className="text-white text-[14px]" />
           </div>
-          <span className="font-semibold text-sm text-content">OmniClipper</span>
+          <span className="font-semibold text-sm text-content">OmniCollector</span>
           <Icon name="unfold_more" className="ml-auto text-content-secondary text-[16px]" />
         </div>
 

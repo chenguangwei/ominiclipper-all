@@ -6,12 +6,28 @@
  * - Electron 环境：使用 JSON 文件存储（library.json, settings.json）
  * - Web 环境：降级使用 localStorage
  * - 内存缓存 + 防抖写入，确保性能
- * - Eagle 风格：mtime.json 自动追踪，backup/ 自动备份
+ * - Eagle 风格：mtime.json 自动追踪，backup/ 自动备份，items/{id}/metadata.json
  */
 import { ResourceItem, Tag, Folder, FilterState, ViewMode } from '../types';
 import { MOCK_TAGS, MOCK_FOLDERS } from '../constants';
 import * as mtimeService from './mtimeService';
 import * as backupService from './backupService';
+import * as folderDirService from './folderDirectoryService';
+import * as itemMetaService from './itemMetadataService';
+
+// Browser-compatible path utilities (avoid Node.js path module)
+const pathUtils = {
+  basename: (filePath: string): string => {
+    const parts = filePath.split(/[/\\]/);
+    return parts[parts.length - 1] || filePath;
+  },
+  join: (...parts: string[]): string => {
+    return parts
+      .filter(Boolean)
+      .join('/')
+      .replace(/\/+/g, '/');
+  },
+};
 
 // ============================================
 // 类型定义
@@ -72,6 +88,10 @@ const WRITE_DEBOUNCE_MS = 500;
 declare global {
   interface Window {
     electronAPI?: {
+      getUserDataPath: () => Promise<string>;
+      fileAPI?: {
+        moveFile: (sourcePath: string, targetPath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+      };
       storageAPI?: {
         getDataPath: () => Promise<string>;
         readLibrary: () => Promise<LibraryData | null>;
@@ -96,6 +116,20 @@ declare global {
         deleteBackup: (backupPath: string) => Promise<{ success: boolean; error?: string }>;
         cleanupOldBackups: (keepCount: number) => Promise<{ deleted: number; error?: string }>;
         getBackupPath: () => Promise<string>;
+      };
+      folderAPI?: {
+        getFoldersPath: () => Promise<string>;
+        createFolder: (folderId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+        deleteFolder: (folderId: string) => Promise<{ success: boolean; error?: string }>;
+        folderExists: (folderId: string) => Promise<boolean>;
+      };
+      itemAPI?: {
+        getItemsPath: () => Promise<string>;
+        saveItemMetadata: (itemId: string, metadata: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+        readItemMetadata: (itemId: string) => Promise<any | null>;
+        deleteItemMetadata: (itemId: string) => Promise<{ success: boolean; error?: string }>;
+        saveItemsIndex: (index: any) => Promise<{ success: boolean; error?: string }>;
+        readItemsIndex: () => Promise<any | null>;
       };
     };
   }
@@ -417,7 +451,7 @@ export const saveItems = (items: ResourceItem[]): void => {
 /**
  * 添加资源项目
  */
-export const addItem = (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>): ResourceItem => {
+export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<ResourceItem> => {
   const newItem: ResourceItem = {
     ...item,
     id: generateId(),
@@ -427,16 +461,26 @@ export const addItem = (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt
   const items = getItems();
   items.unshift(newItem);
   saveItems(items);
+
+  // Save item metadata to Eagle-style structure
+  if (isElectronEnvironment) {
+    await itemMetaService.saveItemMetadata(newItem);
+  }
+
   return newItem;
 };
 
 /**
  * 更新资源项目
  */
-export const updateItem = (id: string, updates: Partial<ResourceItem>): ResourceItem | null => {
+export const updateItem = async (id: string, updates: Partial<ResourceItem>): Promise<ResourceItem | null> => {
   const items = getItems();
   const index = items.findIndex(item => item.id === id);
   if (index === -1) return null;
+
+  const oldItem = items[index];
+  const newFolderId = updates.folderId;
+  const oldFolderId = oldItem.folderId;
 
   items[index] = {
     ...items[index],
@@ -444,19 +488,57 @@ export const updateItem = (id: string, updates: Partial<ResourceItem>): Resource
     updatedAt: new Date().toISOString(),
   };
   saveItems(items);
+
+  // 如果 folderId 改变，移动文件到新文件夹
+  if (isElectronEnvironment && newFolderId !== oldFolderId && oldItem.localPath) {
+    try {
+      // 构建新路径
+      const fileName = pathUtils.basename(oldItem.localPath!);
+      const userDataPath = await window.electronAPI!.getUserDataPath();
+      const storagePath = pathUtils.join(userDataPath, 'OmniCollector');
+
+      // 目标路径：folders/{folderId}/
+      const targetDir = pathUtils.join(storagePath, 'folders', newFolderId || 'uncategorized');
+      const targetPath = pathUtils.join(targetDir, fileName);
+
+      // 移动文件
+      const result = await window.electronAPI!.fileAPI!.moveFile(oldItem.localPath!, targetPath);
+      if (result.success) {
+        // 更新 localPath 和 path
+        items[index].localPath = targetPath;
+        items[index].path = targetPath;
+        saveItems(items);
+        console.log('[Storage] Moved file to folder:', targetPath);
+      }
+    } catch (error) {
+      console.error('[Storage] Failed to move file to new folder:', error);
+    }
+  }
+
+  // Update item metadata in Eagle-style structure
+  if (isElectronEnvironment) {
+    await itemMetaService.saveItemMetadata(items[index]);
+  }
+
   return items[index];
 };
 
 /**
  * 删除资源项目
  */
-export const deleteItem = (id: string): boolean => {
+export const deleteItem = async (id: string): Promise<boolean> => {
   const items = getItems();
   const index = items.findIndex(item => item.id === id);
   if (index === -1) return false;
 
   items.splice(index, 1);
   saveItems(items);
+
+  // Delete item metadata from Eagle-style structure
+  if (isElectronEnvironment) {
+    await itemMetaService.deleteItemMetadata(id);
+  }
+
   return true;
 };
 
@@ -590,7 +672,7 @@ export const saveFolders = (folders: Folder[]): void => {
 /**
  * 添加文件夹
  */
-export const addFolder = (folder: Omit<Folder, 'id'>): Folder => {
+export const addFolder = async (folder: Omit<Folder, 'id'>): Promise<Folder> => {
   const newFolder: Folder = {
     ...folder,
     id: generateId(),
@@ -598,6 +680,12 @@ export const addFolder = (folder: Omit<Folder, 'id'>): Folder => {
   const folders = getFolders();
   folders.push(newFolder);
   saveFolders(folders);
+
+  // Create physical folder in Eagle-style structure
+  if (isElectronEnvironment) {
+    await folderDirService.createFolderPhysical(folders, newFolder.id);
+  }
+
   return newFolder;
 };
 
@@ -617,7 +705,7 @@ export const updateFolder = (id: string, updates: Partial<Folder>): Folder | nul
 /**
  * 删除文件夹
  */
-export const deleteFolder = (id: string): boolean => {
+export const deleteFolder = async (id: string): Promise<boolean> => {
   const folders = getFolders();
   const index = folders.findIndex(folder => folder.id === id);
   if (index === -1) return false;
@@ -626,6 +714,13 @@ export const deleteFolder = (id: string): boolean => {
   const idsToDelete = [id, ...getDescendantFolderIds(id, folders)];
   const filteredFolders = folders.filter(folder => !idsToDelete.includes(folder.id));
   saveFolders(filteredFolders);
+
+  // 删除物理文件夹
+  if (isElectronEnvironment) {
+    for (const folderId of idsToDelete) {
+      await folderDirService.deleteFolderPhysical(folderId);
+    }
+  }
 
   // 将被删除文件夹中的资源项目设为未分类
   const items = getItems();

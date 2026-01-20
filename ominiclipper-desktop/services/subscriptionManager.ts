@@ -1,5 +1,5 @@
 /**
- * OmniClipper - Subscription Manager Service
+ * OmniCollector - Subscription Manager Service
  * 订阅管理 - 处理用户订阅和配额管理
  */
 
