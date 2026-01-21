@@ -471,9 +471,38 @@ export function isElectron(): boolean {
 
 /**
  * Read a local file and return as data URL (Electron only)
+ * Handles blob URLs, local file paths, and non-file URLs
  */
 export async function readLocalFileAsDataUrl(filePath: string): Promise<string | null> {
   if (!isElectron()) {
+    return null;
+  }
+
+  // Handle blob URLs (created during drag & drop)
+  if (filePath.startsWith('blob:')) {
+    try {
+      console.log('Fetching blob URL:', filePath.substring(0, 50) + '...');
+      const response = await fetch(filePath);
+      if (response.ok) {
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+      console.error('Failed to fetch blob:', response.statusText);
+      return null;
+    } catch (e) {
+      console.error('Error reading blob URL:', e);
+      return null;
+    }
+  }
+
+  // Skip non-file URLs (http, data, etc.)
+  if (!filePath || filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:')) {
+    console.log('Skipping non-file URL:', filePath?.substring(0, 50));
     return null;
   }
 

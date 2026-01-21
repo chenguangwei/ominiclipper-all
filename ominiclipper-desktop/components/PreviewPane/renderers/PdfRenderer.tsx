@@ -1,10 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { ResourceItem, ColorMode, ResourceType } from '../../../types';
 import Icon from '../../Icon';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configure PDF.js worker (required for PDF.js to work)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface PdfRendererProps {
   item: ResourceItem;

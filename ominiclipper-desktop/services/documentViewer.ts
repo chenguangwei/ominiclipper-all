@@ -5,21 +5,8 @@
 
 import { ResourceType } from '../types';
 
-// PDF.js worker configuration - using jsDelivr which has better global CDN coverage
-const PDF_JS_VERSION = '4.0.379';
-// Try multiple CDNs for better reliability
-const PDF_JS_CDNS = [
-  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_JS_VERSION}/build`,
-  `https://unpkg.com/pdfjs-dist@${PDF_JS_VERSION}/build`,
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDF_JS_VERSION}`,
-];
-
-// EPUB.js configuration
-const EPUB_JS_VERSION = '0.3.93';
-const EPUB_JS_CDNS = [
-  `https://cdn.jsdelivr.net/npm/epubjs@${EPUB_JS_VERSION}/dist`,
-  `https://unpkg.com/epubjs@${EPUB_JS_VERSION}/dist`,
-];
+// Use local pdfjs-dist package instead of CDN
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // Document viewer state
 export interface DocumentViewerState {
@@ -37,56 +24,29 @@ export interface TocEntry {
   href?: string;
 }
 
-// Load script with timeout
-function loadScript(src: string, timeout: number = 10000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = src;
-
-    const timeoutId = setTimeout(() => {
-      console.warn(`Script load timeout: ${src}`);
-      resolve(false);
-    }, timeout);
-
-    script.onload = () => {
-      clearTimeout(timeoutId);
-      resolve(true);
-    };
-    script.onerror = (e) => {
-      clearTimeout(timeoutId);
-      console.error(`Failed to load script: ${src}`, e);
-      resolve(false);
-    };
-    document.head.appendChild(script);
-  });
-}
-
-// Initialize PDF.js with fallback CDNs
+// Initialize PDF.js using local package
 export async function initPdfJs(): Promise<boolean> {
   if ((window as any).pdfjsLib) {
     console.log('PDF.js already loaded');
     return true;
   }
 
-  // Try each CDN until one works
-  for (const cdn of PDF_JS_CDNS) {
-    console.log(`Trying to load PDF.js from: ${cdn}`);
-    const loaded = await loadScript(`${cdn}/pdf.min.js`);
+  try {
+    // Use dynamic import to load the local pdfjs-dist package
+    const pdfjs = await import('pdfjs-dist');
 
-    if (loaded && (window as any).pdfjsLib) {
-      try {
-        // Set worker source from the same CDN
-        (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = `${cdn}/pdf.worker.min.js`;
-        console.log('PDF.js loaded successfully from:', cdn);
-        return true;
-      } catch (e) {
-        console.error('PDF.js initialization error:', e);
-      }
-    }
+    // Set the worker source to the locally bundled worker
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+
+    // Expose pdfjsLib globally for the renderPdf function
+    (window as any).pdfjsLib = pdfjs;
+
+    console.log('PDF.js loaded successfully with local worker');
+    return true;
+  } catch (error) {
+    console.error('Failed to load PDF.js:', error);
+    return false;
   }
-
-  console.error('Failed to load PDF.js from all CDNs');
-  return false;
 }
 
 // Initialize EPUB.js with fallback CDNs
@@ -212,10 +172,10 @@ export async function renderPdf(
   try {
     // For data URLs and regular URLs, pass the URL directly
     // PDF.js 4.x accepts both string URLs and TypedArrays
+    // Use built-in cMaps (no external CDN needed for most PDFs)
     const loadingTask = pdfjsLib.getDocument({
       url: url,
-      cMapUrl: url.startsWith('data:') ? undefined : 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
-      cMapPacked: url.startsWith('data:') ? undefined : true,
+      cMapPacked: true,
     });
     pdfDoc = await loadingTask.promise;
 

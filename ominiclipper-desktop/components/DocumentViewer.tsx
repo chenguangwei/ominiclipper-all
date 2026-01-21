@@ -59,17 +59,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
       if (item.type === ResourceType.PDF) {
         setUseNativeViewer(true);
 
-        // If it's a local file reference in Electron, use the custom protocol
-        if (item.storageMode === 'reference' && item.localPath && isElectron()) {
-          console.log('Using localfile protocol for PDF:', item.localPath);
-          // Use custom protocol: localfile:///path/to/file.pdf
-          const protocolUrl = `localfile://${item.localPath}`;
-          setResolvedPath(protocolUrl);
-          setIsLoading(false);
-          return;
-        }
-
-        // If it's embedded data (data URL), use directly
+        // Priority 1: Embedded data - use directly
         if (item.storageMode === 'embed' && item.embeddedData) {
           console.log('Using embedded data URL for PDF');
           setResolvedPath(item.embeddedData);
@@ -77,16 +67,40 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
           return;
         }
 
-        // For other URLs (http, https), use directly
+        // Priority 2: Local file in Electron - use localfile protocol or read as data URL
+        if (isElectron()) {
+          // Use localfile protocol if localPath exists
+          if (item.localPath) {
+            console.log('Using localfile protocol for PDF:', item.localPath);
+            const protocolUrl = `localfile://${item.localPath}`;
+            setResolvedPath(protocolUrl);
+            setIsLoading(false);
+            return;
+          }
+
+          // Fallback: try to read file from path
+          const filePath = item.path || item.originalPath;
+          if (filePath && !filePath.startsWith('http')) {
+            console.log('Reading file as data URL from:', filePath);
+            const dataUrl = await readLocalFileAsDataUrl(filePath);
+            if (dataUrl) {
+              setResolvedPath(dataUrl);
+              setIsLoading(false);
+              return;
+            }
+          }
+        }
+
+        // Priority 3: HTTP/HTTPS URLs - use directly
         if (rawDocumentPath.startsWith('http://') || rawDocumentPath.startsWith('https://')) {
           setResolvedPath(rawDocumentPath);
           setIsLoading(false);
           return;
         }
 
-        // Fallback: try to read as data URL
-        if (item.localPath && isElectron()) {
-          const dataUrl = await readLocalFileAsDataUrl(item.localPath);
+        // Priority 4: If path is a local file path, try reading it
+        if (item.path && !item.path.startsWith('http') && !item.path.startsWith('blob:')) {
+          const dataUrl = await readLocalFileAsDataUrl(item.path);
           if (dataUrl) {
             setResolvedPath(dataUrl);
             setIsLoading(false);

@@ -1,4 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+// Global PDF.js worker configuration - set once at app startup
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import ListDetailView from './components/ListDetailView';

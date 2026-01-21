@@ -46,7 +46,7 @@ export const generatePdfThumbnail = async (filePath: string): Promise<string | n
   try {
     // Use pdfjs-dist in renderer to render first page
     const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+    // Worker is configured globally in App.tsx, no need to set here
 
     // 读取文件内容并传递给 pdfjs 作为 ArrayBuffer
     const fileData = await (window as any).electronAPI.readFile(filePath);

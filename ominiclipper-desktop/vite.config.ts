@@ -45,6 +45,44 @@ function electronCopyPlugin() {
   };
 }
 
+// Plugin to copy PDF.js worker to dist folder
+function pdfWorkerCopyPlugin() {
+  return {
+    name: 'pdf-worker-copy',
+    closeBundle: () => {
+      const pdfWorkerSrc = resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+      const pdfWorkerDest = resolve(__dirname, 'dist/pdf.worker.min.mjs');
+
+      if (existsSync(pdfWorkerSrc)) {
+        copyFileSync(pdfWorkerSrc, pdfWorkerDest);
+        console.log('PDF.js worker copied to dist/');
+      } else {
+        console.warn('PDF.js worker not found at:', pdfWorkerSrc);
+      }
+    }
+  };
+}
+
+// Plugin to serve PDF worker in dev mode from node_modules
+function pdfWorkerDevPlugin() {
+  return {
+    name: 'pdf-worker-dev',
+    configureServer(server: any) {
+      // Handle PDF worker requests in development mode
+      server.middlewares.use('/pdf.worker.min.mjs', (req: any, res: any, next: any) => {
+        const pdfWorkerPath = resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+        if (existsSync(pdfWorkerPath)) {
+          const fs = require('fs');
+          res.setHeader('Content-Type', 'application/javascript');
+          fs.createReadStream(pdfWorkerPath).pipe(res);
+        } else {
+          next();
+        }
+      });
+    }
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const isDev = mode === 'development';
@@ -58,7 +96,9 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      electronCopyPlugin()
+      electronCopyPlugin(),
+      pdfWorkerCopyPlugin(),
+      ...(isDev ? [pdfWorkerDevPlugin()] : [])
     ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

@@ -8,7 +8,6 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #358 | 11:17 PM | 🔵 | Identified light mode styling issues in Sidebar component | ~228 |
-| #357 | 11:11 PM | 🔴 | Light theme button visibility issue | ~289 |
 
 ### Jan 18, 2026
 
@@ -55,6 +54,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #809 | 6:40 PM | 🔵 | Locating DocumentViewer Component Usage | ~292 |
 | #772 | 1:57 PM | 🔴 | File path resolution error persists in PreviewPane | ~348 |
 | #771 | " | 🔵 | Analyzed omniclipper-desktop project structure and code organization patterns | ~376 |
 | #769 | " | 🔵 | Comprehensive analysis of PreviewPane component architecture | ~379 |
