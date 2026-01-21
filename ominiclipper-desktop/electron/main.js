@@ -28,7 +28,7 @@ function createWindow() {
     },
     backgroundColor: '#1e1e1e',
     titleBarStyle: 'hiddenInset',
-    show: false
+    show: true
   });
 
   // Load the app

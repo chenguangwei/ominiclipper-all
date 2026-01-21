@@ -44,7 +44,7 @@ const { pathToFileURL } = require('url');
 const httpServer = require('./httpServer.cjs');
 const vectorService = require('./vectorService.cjs');
 const searchIndexManager = require('./searchIndexManager.cjs');
-
+console.log('✅ 依赖加载完成');
 // Debug: check what we got from electron
 console.log('Electron module keys:', Object.keys(electron));
 console.log('ipcMain:', typeof ipcMain);
@@ -78,7 +78,7 @@ function createWindow() {
     },
     backgroundColor: '#1e1e1e',
     titleBarStyle: 'hiddenInset',
-    show: false
+    show: true
   });
 
   console.log('[createWindow] BrowserWindow created');
@@ -143,7 +143,7 @@ function createWindow() {
       shell.openExternal(url).catch(err => console.error('Failed to open URL:', err));
     }
   });
-
+  console.log('🔍 准备配置 HttpServer...');
   // Set main window reference for HTTP server sync
   httpServer.setMainWindow(mainWindow);
 
@@ -1283,22 +1283,29 @@ ipcMain.handle('storage:migrate', async (event, legacyData) => {
     return { success: false, error: error.message };
   }
 });
-
+}
+console.log('🔍 准备注册协议...');
 // Register custom protocol for local file access
 // This allows the renderer to access local files via localfile:// URLs
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'localfile',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-      bypassCSP: true,
-      allowFileAccess: true
+try {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: 'localfile',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+        bypassCSP: true,
+        allowFileAccess: true
+      }
     }
-  }
-]);
+  ]);
+} catch (err) {
+  console.error('❌ 严重错误：无法注册协议，跳过以启动窗口:', err);
+}
+
+console.log('⏳ 等待 app.whenReady...');
 
 // App events
 app.whenReady().then(async () => {
@@ -1307,9 +1314,14 @@ app.whenReady().then(async () => {
   // Initialize search index manager (BM25 FTS5)
   const userDataPath = app.getPath('userData');
   console.log('[App] userDataPath:', userDataPath);
-
-  // Now with fixed require() instead of dynamic import
-  await searchIndexManager.initialize(userDataPath);
+try {
+    console.log('正在初始化搜索服务...');
+    // Now with fixed require() instead of dynamic import
+    // await searchIndexManager.initialize(userDataPath);
+    console.log('搜索服务初始化完成');
+  } catch (err) {
+      console.error('❌ 严重错误：搜索服务初始化失败，跳过以启动窗口:', err);
+  }
 
   // Register all IPC handlers (must be done after app is ready)
   registerIPCHandlers();
@@ -1412,4 +1424,4 @@ ipcMain.handle('search:bm25', async (event, { query, limit }) => {
 ipcMain.handle('search:getStats', async () => {
   return await searchIndexManager.getStats();
 });
-}
+// }

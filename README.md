@@ -30,3 +30,8 @@
 
 ## 风格
 参考已经实现的代码，苹果风格
+
+
+ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" \
+ELECTRON_CUSTOM_DIR="{{ version }}" \
+npm install
