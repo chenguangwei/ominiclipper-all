@@ -35,3 +35,4 @@ ominiclipper-desktop/release/builder-debug.yml
 .worktrees/
 temp_model_cache/
 package-lock.json
+dist-electron/

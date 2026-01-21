@@ -285,40 +285,48 @@ async function search(query, limit = 5) {
     const queryVector = await embed(query);
 
     // Search for similar chunks
+    // 🔴 修复点：将 .execute() 改为 .toArray()
     const rawResults = await table
       .search(queryVector)
       .limit(limit * 3)  // Get more chunks, then deduplicate
-      .execute();
+      .toArray();
+
+    console.log('[VectorService] Search rawResults type:', typeof rawResults, 'value:', rawResults);
 
     // Aggregate results by doc_id, keeping best chunk per document
     const docMap = new Map();
 
-    for (const r of rawResults) {
-      const docId = r.doc_id;
-      if (!docMap.has(docId) || r._distance < docMap.get(docId).score) {
-        docMap.set(docId, {
-          id: docId,
-          chunk_id: r.id,
-          text: r.text,
-          score: r._distance,
-          chunk_index: r.chunk_index,
-          metadata: {
-            title: r.title,
-            type: r.type,
-            tags: JSON.parse(r.tags || '[]'),
-            createdAt: r.createdAt,
-          },
-        });
+    if (Array.isArray(rawResults)) {
+      for (const r of rawResults) {
+        const docId = r.doc_id;
+        if (!docMap.has(docId) || r._distance < docMap.get(docId).score) {
+          docMap.set(docId, {
+            id: docId,
+            chunk_id: r.id,
+            text: r.text,
+            score: r._distance,
+            chunk_index: r.chunk_index,
+            metadata: {
+              title: r.title,
+              type: r.type,
+              tags: JSON.parse(r.tags || '[]'),
+              createdAt: r.createdAt,
+            },
+          });
+        }
       }
+
+      // Convert to array and sort by score
+      const results = Array.from(docMap.values())
+        .sort((a, b) => a.score - b.score)
+        .slice(0, limit);
+
+      console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks');
+      return results;
+    } else {
+      console.error('[VectorService] Search results not iterable:', typeof rawResults, rawResults);
+      return [];
     }
-
-    // Convert to array and sort by score
-    const results = Array.from(docMap.values())
-      .sort((a, b) => a.score - b.score)
-      .slice(0, limit);
-
-    console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks');
-    return results;
   } catch (error) {
     console.error('[VectorService] Search error:', error);
     return [];

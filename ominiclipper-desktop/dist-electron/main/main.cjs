@@ -1424,4 +1424,3 @@ ipcMain.handle('search:bm25', async (event, { query, limit }) => {
 ipcMain.handle('search:getStats', async () => {
   return await searchIndexManager.getStats();
 });
-// }

@@ -28,5 +28,3 @@ release
 *.sw?
 dist/
 dist-electron/
-
-
