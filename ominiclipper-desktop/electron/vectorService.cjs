@@ -79,12 +79,27 @@ async function initialize(userDataPath) {
       fs.mkdirSync(modelsPath, { recursive: true });
     }
 
-    // Configure Transformers.js cache
+    // Configure Transformers.js to use local models only
     env.cacheDir = modelsPath;
+    env.localModelPath = modelsPath;
     env.allowLocalModels = true;
+    env.allowRemoteModels = false; // Disable network fetching
 
     console.log('[VectorService] Loading embedding model:', MODEL_NAME);
     console.log('[VectorService] Models cache:', modelsPath);
+
+    // Check if local model exists
+    const localModelDir = path.join(modelsPath, 'Xenova', 'all-MiniLM-L6-v2');
+    const configPath = path.join(localModelDir, 'config.json');
+    console.log('[VectorService] Local model path:', localModelDir);
+    console.log('[VectorService] Model exists locally:', fs.existsSync(configPath));
+
+    if (!fs.existsSync(configPath)) {
+      console.warn('[VectorService] Local model not found. Please download the model first.');
+      console.warn('[VectorService] Expected path:', localModelDir);
+      // Allow remote fetch as fallback
+      env.allowRemoteModels = true;
+    }
 
     // Load embedding model with retry mechanism
     console.log('[VectorService] Attempting to load embedding model:', MODEL_NAME);

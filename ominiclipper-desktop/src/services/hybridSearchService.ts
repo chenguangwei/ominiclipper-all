@@ -2,6 +2,33 @@
 
 import { SearchResult } from '../types/chat';
 
+// Extend window for Electron API
+declare global {
+  interface Window {
+    electronAPI?: {
+      vectorAPI?: {
+        search: (query: string, limit: number) => Promise<VectorSearchResult[]>;
+        initialize: () => Promise<{ success: boolean; error?: string }>;
+        index: (id: string, text: string, metadata: any) => Promise<{ success: boolean }>;
+        delete: (id: string) => Promise<{ success: boolean }>;
+        getStats: () => Promise<{ totalDocs: number; lastUpdated: string; modelLoaded: boolean; dbPath: string }>;
+      };
+    };
+  }
+}
+
+interface VectorSearchResult {
+  id: string;
+  text: string;
+  score: number;
+  metadata: {
+    title: string;
+    type: string;
+    tags: string[];
+    createdAt: string;
+  };
+}
+
 export interface HybridSearchOptions {
   query: string;
   limit?: number;
@@ -39,13 +66,31 @@ export class HybridSearchService {
   }
 
   protected async vectorSearch(query: string, limit: number): Promise<SearchResult[]> {
-    // TODO: 集成 LanceDB 向量搜索
-    // return window.electron?.vectorStore.search(query, limit) || [];
-    return [];
+    try {
+      // 调用 Electron 主进程的向量搜索
+      const results = await window.electronAPI?.vectorAPI?.search(query, limit);
+      if (!results || results.length === 0) {
+        console.log('[HybridSearch] No vector results found');
+        return [];
+      }
+
+      // 转换为 SearchResult 格式
+      return results.map((r: VectorSearchResult) => ({
+        id: r.id,
+        title: r.metadata?.title || 'Untitled',
+        type: r.metadata?.type || 'unknown',
+        text: r.text || '',
+        score: 1 - (r.score || 0), // LanceDB 返回的是距离，转换为相似度
+      }));
+    } catch (error) {
+      console.error('[HybridSearch] Vector search failed:', error);
+      return [];
+    }
   }
 
   protected async bm25Search(query: string, limit: number): Promise<SearchResult[]> {
-    // TODO: 集成现有 FTS5 搜索
+    // BM25 搜索作为补充，目前返回空数组
+    // 未来可以集成 SQLite FTS5 或其他全文搜索
     return [];
   }
 

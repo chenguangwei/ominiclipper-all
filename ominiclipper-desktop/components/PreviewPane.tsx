@@ -17,6 +17,45 @@ import TypeDropdown from './TypeDropdown';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 /**
+ * Check if a path is an absolute file path (not just a filename)
+ */
+const isAbsolutePath = (pathStr: string | undefined): boolean => {
+  if (!pathStr) return false;
+  // Unix absolute path or Windows absolute path
+  return pathStr.startsWith('/') || /^[A-Za-z]:[\\/]/.test(pathStr);
+};
+
+/**
+ * Get a valid file path for reading, preferring localPath over originalPath
+ * Only returns path if it's an absolute path (not just a filename)
+ */
+const getValidFilePath = (item: ResourceItem): string | null => {
+  // Debug logging for path resolution
+  console.log('[PreviewPane] getValidFilePath for:', item.title);
+  console.log('[PreviewPane] - localPath:', item.localPath);
+  console.log('[PreviewPane] - path:', item.path);
+  console.log('[PreviewPane] - originalPath:', item.originalPath);
+
+  // Prefer localPath as it's the actual stored file location
+  if (item.localPath && isAbsolutePath(item.localPath)) {
+    console.log('[PreviewPane] - using localPath (absolute)');
+    return item.localPath;
+  }
+  // path field should also be absolute if it's a file path
+  if (item.path && isAbsolutePath(item.path)) {
+    console.log('[PreviewPane] - using path (absolute)');
+    return item.path;
+  }
+  // originalPath might be just a filename for display, only use if absolute
+  if (item.originalPath && isAbsolutePath(item.originalPath)) {
+    console.log('[PreviewPane] - using originalPath (absolute)');
+    return item.originalPath;
+  }
+  console.warn('[PreviewPane] - NO valid absolute path found!');
+  return null;
+};
+
+/**
  * Get the effective resource type, checking file extension for UNKNOWN types
  */
 const getEffectiveType = (item: ResourceItem): ResourceType => {
@@ -25,8 +64,9 @@ const getEffectiveType = (item: ResourceItem): ResourceType => {
   }
 
   // For UNKNOWN types, check the file extension
-  const filePath = item.localPath || item.originalPath || item.path || '';
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  // Use title, originalPath (for display filename), or valid file path
+  const fileName = item.title || item.originalPath || getValidFilePath(item) || '';
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
 
   switch (ext) {
     case 'md':
@@ -125,9 +165,13 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
         return `data:${mimeType};base64,${item.embeddedData}`;
       }
 
-      // For local files in Electron
-      const filePath = item.localPath || item.originalPath || item.path;
+      // For local files in Electron - use validated file path
+      const filePath = getValidFilePath(item);
       console.log('File path:', filePath);
+
+      if (!filePath) {
+        console.warn('No valid absolute file path available for item:', item.title);
+      }
 
       // For PDF and images, we need to read the file as data URL
       if (filePath && (itemEffectiveType === ResourceType.PDF || itemEffectiveType === ResourceType.IMAGE)) {
@@ -161,9 +205,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
     // Load Word document preview
     const loadWordPreview = async () => {
-      const filePath = item.localPath || item.originalPath || item.path;
+      const filePath = getValidFilePath(item);
       if (!filePath) {
-        setPreviewError('No document path available');
+        setPreviewError('No valid document path available. The file may have been moved or deleted.');
         setPreviewLoading(false);
         return;
       }
@@ -262,9 +306,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
         return;
       }
 
-      const filePath = item.localPath || item.originalPath || item.path;
+      const filePath = getValidFilePath(item);
       if (!filePath) {
-        setPreviewError('No document path available');
+        setPreviewError('No valid document path available. The file may have been moved or deleted.');
         setPreviewLoading(false);
         return;
       }
@@ -272,7 +316,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       try {
         // Read file as ArrayBuffer via Electron API (like Word does)
         if ((window as any).electronAPI?.readFile) {
-          console.log('[PDF Preview] Reading file...');
+          console.log('[PDF Preview] Reading file:', filePath);
           const result = await (window as any).electronAPI.readFile(filePath);
           if (result.success && result.buffer) {
             console.log('[PDF Preview] File read successfully');
@@ -346,9 +390,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
     // Load Markdown preview
     const loadMarkdownPreview = async () => {
-      const filePath = item.localPath || item.originalPath || item.path;
+      const filePath = getValidFilePath(item);
       if (!filePath) {
-        setPreviewError('No file path available');
+        setPreviewError('No valid file path available. The file may have been moved or deleted.');
         setPreviewLoading(false);
         return;
       }
@@ -478,7 +522,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   // Open in system default application (for documents)
   const handleOpenInSystem = async () => {
     // For documents, try to open with system default app
-    const filePath = item.localPath || item.originalPath;
+    // Use validated file path to avoid ENOENT errors
+    const filePath = getValidFilePath(item);
     if (filePath && (window as any).electronAPI?.openPath) {
       try {
         await (window as any).electronAPI.openPath(filePath);
@@ -497,7 +542,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
   // Show file in Finder/Explorer
   const handleShowInFolder = async () => {
-    const filePath = item.localPath || item.originalPath;
+    // Use validated file path
+    const filePath = getValidFilePath(item);
     if (filePath && (window as any).electronAPI?.showItemInFolder) {
       try {
         await (window as any).electronAPI.showItemInFolder(filePath);
@@ -521,7 +567,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
     // For images, try to open with system app, or fallback to document viewer
     if (item.type === ResourceType.IMAGE) {
-      const filePath = item.localPath || item.originalPath || item.path;
+      // Use validated file path
+      const filePath = getValidFilePath(item);
       if (filePath && (window as any).electronAPI?.openPath) {
         try {
           (window as any).electronAPI.openPath(filePath);
@@ -533,8 +580,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       // Fallback: open in document viewer
       if (onOpenDocument) {
         onOpenDocument(item);
-      } else if (item.path) {
-        // Last resort: try to open directly
+      } else if (item.path && (item.path.startsWith('http://') || item.path.startsWith('https://'))) {
+        // Last resort: try to open web URL directly
         if ((window as any).electronAPI?.openExternal) {
           (window as any).electronAPI.openExternal(item.path);
         } else {
@@ -547,8 +594,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     // For documents with viewer, open in viewer
     if (shouldShowView && onOpenDocument) {
       onOpenDocument(item);
-    } else if (item.path) {
-      // Fallback: try to open path directly
+    } else if (item.path && (item.path.startsWith('http://') || item.path.startsWith('https://'))) {
+      // Fallback: try to open web URL directly
       if ((window as any).electronAPI?.openExternal) {
         (window as any).electronAPI.openExternal(item.path);
       } else {
@@ -840,8 +887,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                     <Icon name={item.type === ResourceType.WEB ? "open_in_new" : shouldShowView ? "visibility" : "open_in_new"} />
                     {item.type === ResourceType.WEB ? "Open" : shouldShowView ? "View" : "Open"}
                   </button>
-                  {/* For documents, show "Open in System" button */}
-                  {canViewInDocument && (item.localPath || item.originalPath) && (
+                  {/* For documents, show "Open in System" button - only if we have a valid file path */}
+                  {canViewInDocument && getValidFilePath(item) && (
                     <button
                       onClick={handleOpenInSystem}
                       className={secondaryButtonClass}
@@ -850,8 +897,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                       <Icon name="open_in_new" />
                     </button>
                   )}
-                  {/* Show in folder button for local files */}
-                  {(item.localPath || item.originalPath) && (
+                  {/* Show in folder button for local files - only if we have a valid file path */}
+                  {getValidFilePath(item) && (
                     <button
                       onClick={handleShowInFolder}
                       className={secondaryButtonClass}
@@ -952,7 +999,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
                     </div>
                   )}
                 </div>
-                {(item.localPath || item.originalPath || item.path || onOpenDocument) && (
+                {(getValidFilePath(item) || onOpenDocument) && (
                   <div className="flex justify-center mt-4">
                     <button
                       onClick={handleOpen}

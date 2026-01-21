@@ -219,9 +219,34 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
+// Helper: Check if path is absolute
+function isAbsolutePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  // Unix absolute path or Windows absolute path
+  return filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
+}
+
 // IPC Handlers for file operations
 ipcMain.handle('fs:readFile', async (event, filePath) => {
   try {
+    // Validate that the path is absolute to avoid ENOENT errors with relative paths
+    if (!isAbsolutePath(filePath)) {
+      console.error('[fs:readFile] Invalid path (not absolute):', filePath);
+      return {
+        success: false,
+        error: `Invalid file path: "${filePath}". Expected an absolute path starting with / or drive letter.`
+      };
+    }
+
+    // Check if file exists before reading
+    if (!fs.existsSync(filePath)) {
+      console.error('[fs:readFile] File not found:', filePath);
+      return {
+        success: false,
+        error: `File not found: "${filePath}". The file may have been moved or deleted.`
+      };
+    }
+
     const data = fs.readFileSync(filePath);
     const mimeType = getMimeType(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -237,17 +262,37 @@ ipcMain.handle('fs:readFile', async (event, filePath) => {
       mimeType
     };
   } catch (error) {
+    console.error('[fs:readFile] Error reading file:', filePath, error.message);
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('fs:readFileAsDataUrl', async (event, filePath) => {
   try {
+    // Validate that the path is absolute
+    if (!isAbsolutePath(filePath)) {
+      console.error('[fs:readFileAsDataUrl] Invalid path (not absolute):', filePath);
+      return {
+        success: false,
+        error: `Invalid file path: "${filePath}". Expected an absolute path.`
+      };
+    }
+
+    // Check if file exists before reading
+    if (!fs.existsSync(filePath)) {
+      console.error('[fs:readFileAsDataUrl] File not found:', filePath);
+      return {
+        success: false,
+        error: `File not found: "${filePath}". The file may have been moved or deleted.`
+      };
+    }
+
     const data = fs.readFileSync(filePath);
     const mimeType = getMimeType(filePath);
     const base64 = data.toString('base64');
     return { success: true, dataUrl: `data:${mimeType};base64,${base64}` };
   } catch (error) {
+    console.error('[fs:readFileAsDataUrl] Error reading file:', filePath, error.message);
     return { success: false, error: error.message };
   }
 });
