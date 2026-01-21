@@ -532,6 +532,11 @@ const App: React.FC = () => {
       const file = files[0];
       const filePath = (file as any).path;
 
+      // Debug logging for file drop
+      console.log('[App] handleDrop - file:', file.name);
+      console.log('[App] handleDrop - file.path (Electron):', filePath);
+      console.log('[App] handleDrop - file object keys:', Object.keys(file));
+
       // Check if it's a directory in Electron
       if (filePath && (window as any).electronAPI?.isDirectory) {
         try {
@@ -560,6 +565,10 @@ const App: React.FC = () => {
 
     const electronFilePath = (file as any).path;
     const type = getResourceTypeFromFile(file);
+
+    // Debug logging
+    console.log('[App] handleDropOnFolder - file.name:', file.name);
+    console.log('[App] handleDropOnFolder - electronFilePath:', electronFilePath);
 
     let path: string;
     let localPath: string | undefined;
@@ -625,6 +634,11 @@ const App: React.FC = () => {
     const electronFilePath = (file as any).path;
     // Always set originalPath to the file name for display
     const originalPath = electronFilePath || file.name;
+
+    // Debug logging
+    console.log('[App] handleFileDropConfirm - file.name:', file.name);
+    console.log('[App] handleFileDropConfirm - electronFilePath:', electronFilePath);
+    console.log('[App] handleFileDropConfirm - mode:', mode);
 
     if (mode === 'embed') {
       // Copy file to app's storage directory (use custom path if set)

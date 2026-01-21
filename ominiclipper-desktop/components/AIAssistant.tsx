@@ -16,15 +16,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       setMessages([{
         id: 'welcome',
         role: 'assistant',
-        content: '你好！我是 OmniClipper AI 助手。有什么可以帮你查找的吗？',
+        content: 'Hi! I\'m the OmniClipper AI Assistant. How can I help you search your collection?',
         timestamp: Date.now(),
       }]);
+    }
+    // Focus input when opened
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [isOpen]);
 
@@ -46,16 +51,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
     chatService.addMessage('user', question);
     setMessages([...chatService.getMessages()]);
 
-    // 添加临时的空回复消息用于显示流式输出
-    const tempMessageId = crypto.randomUUID();
-    chatService.addMessage('assistant', '', []);
-    setMessages([...chatService.getMessages()]);
-
     try {
       const canUse = await subscriptionManager.canUseAI();
       if (!canUse) {
         const remaining = subscriptionManager.getRemainingQuota();
-        chatService.addMessage('assistant', `本月 AI 配额已用完。剩余: ${remaining} tokens`);
+        chatService.addMessage('assistant', `Monthly AI quota exhausted. Remaining: ${remaining} tokens`);
         setMessages([...chatService.getMessages()]);
         return;
       }
@@ -65,96 +65,151 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
 
       let fullResponse = '';
 
-      // 使用流式输出
+      // Add placeholder message for streaming
+      chatService.addMessage('assistant', '', []);
+      setMessages([...chatService.getMessages()]);
+
       await llmProviderService.chatWithContext(
         context,
         question,
         chatService.buildContextForLLM(),
         (token) => {
           fullResponse += token;
-          // 实时更新 UI
           const currentMessages = chatService.getMessages();
-          const lastMsgIndex = currentMessages.findIndex(m => m.role === 'assistant');
-          if (lastMsgIndex !== -1) {
-            currentMessages[lastMsgIndex].content = fullResponse;
+          const lastMsg = currentMessages[currentMessages.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content = fullResponse;
             setMessages([...currentMessages]);
           }
         }
       );
 
-      // 更新完整响应和来源信息
+      // Update with sources
       const currentMessages = chatService.getMessages();
-      const lastMsgIndex = currentMessages.findIndex(m => m.role === 'assistant');
-      if (lastMsgIndex !== -1) {
-        currentMessages[lastMsgIndex].content = fullResponse;
-        currentMessages[lastMsgIndex].sources = results;
+      const lastMsg = currentMessages[currentMessages.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.content = fullResponse;
+        lastMsg.sources = results;
         setMessages([...currentMessages]);
       }
 
-      // 更新 Token 使用量（模拟值，实际项目中从 API 响应获取）
       const estimatedTokens = Math.ceil(fullResponse.length / 4);
       subscriptionManager.updateUsage(estimatedTokens);
     } catch (error) {
       console.error('AI Assistant error:', error);
-      chatService.addMessage('assistant', '抱歉，发生了错误。请重试。');
+      chatService.addMessage('assistant', 'Sorry, an error occurred. Please try again.');
       setMessages([...chatService.getMessages()]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isOpen) return null;
+  const handleClear = () => {
+    chatService.clear();
+    setMessages([{
+      id: 'welcome',
+      role: 'assistant',
+      content: 'Hi! I\'m the OmniClipper AI Assistant. How can I help you search your collection?',
+      timestamp: Date.now(),
+    }]);
+  };
 
   return (
-    <div className="fixed left-0 top-0 bottom-0 w-96 bg-[#1a1a1a] border-r border-white/10 flex flex-col">
-      {/* Header */}
-      <div className="h-12 border-b border-white/10 flex items-center justify-between px-4">
-        <span className="text-sm font-medium text-white">AI 助手</span>
-        <button onClick={onClose} className="text-slate-400 hover:text-white">
-          <Icon name="close" />
-        </button>
-      </div>
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+      />
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map(msg => (
-          <MessageItem key={msg.id} message={msg} />
-        ))}
-        {isLoading && (
-          <div className="flex items-center gap-2 text-slate-400 text-sm">
-            <Icon name="progress_activity" className="animate-spin" />
-            思考中...
+      {/* Panel */}
+      <div
+        className={`fixed right-0 top-0 bottom-0 w-[420px] max-w-[90vw] z-50
+          bg-surface border-l border-[rgb(var(--color-border)/var(--border-opacity))]
+          shadow-2xl flex flex-col
+          transition-transform duration-300 ease-out
+          ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        {/* Header */}
+        <div className="h-14 border-b border-[rgb(var(--color-border)/var(--border-opacity))] flex items-center justify-between px-4 bg-surface-secondary">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center">
+              <Icon name="smart_toy" className="text-white text-[18px]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-content">AI Assistant</h3>
+              <p className="text-[10px] text-content-secondary">Chat with your collection</p>
+            </div>
           </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleClear}
+              className="p-2 rounded-lg text-content-secondary hover:text-content hover:bg-surface-tertiary transition-colors"
+              title="Clear conversation"
+            >
+              <Icon name="delete_sweep" className="text-[18px]" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg text-content-secondary hover:text-content hover:bg-surface-tertiary transition-colors"
+            >
+              <Icon name="close" className="text-[20px]" />
+            </button>
+          </div>
+        </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-white/10">
-        <div className="relative">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="输入问题..."
-            className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 resize-none focus:border-primary outline-none"
-            rows={2}
-          />
-          <button
-            onClick={handleSend}
-            disabled={isLoading || !input.trim()}
-            className="absolute right-2 bottom-2 p-1 text-primary hover:text-primary/80 disabled:text-slate-600"
-          >
-            <Icon name="send" />
-          </button>
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+          {messages.map(msg => (
+            <MessageItem key={msg.id} message={msg} />
+          ))}
+          {isLoading && messages[messages.length - 1]?.content === '' && (
+            <div className="flex items-center gap-2 text-content-secondary text-sm px-3 py-2">
+              <Icon name="progress_activity" className="animate-spin text-primary" />
+              <span>Thinking...</span>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="p-4 border-t border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-secondary">
+          <div className="relative">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Ask about your collection..."
+              className="w-full bg-surface border border-[rgb(var(--color-border)/var(--border-opacity))]
+                rounded-xl px-4 py-3 pr-12 text-sm text-content placeholder-content-secondary
+                resize-none focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none
+                transition-all"
+              rows={2}
+            />
+            <button
+              onClick={handleSend}
+              disabled={isLoading || !input.trim()}
+              className="absolute right-3 bottom-3 p-2 rounded-lg bg-primary text-white
+                hover:bg-primary/90 disabled:bg-surface-tertiary disabled:text-content-secondary
+                transition-colors"
+            >
+              <Icon name="send" className="text-[16px]" />
+            </button>
+          </div>
+          <p className="text-[10px] text-content-secondary mt-2 text-center">
+            Press Enter to send, Shift+Enter for new line
+          </p>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -163,18 +218,25 @@ const MessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-lg px-3 py-2 ${
-        isUser ? 'bg-primary text-white' : 'bg-surface-tertiary text-slate-200'
+      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+        isUser
+          ? 'bg-primary text-white rounded-br-md'
+          : 'bg-surface-tertiary text-content rounded-bl-md border border-[rgb(var(--color-border)/var(--border-opacity))]'
       }`}>
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
         {message.sources && message.sources.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-white/10">
-            <p className="text-xs text-slate-400 mb-1">来源:</p>
-            {message.sources.map((s, i) => (
-              <span key={s.id} className="text-xs text-primary">
-                [{i + 1}] {s.title}
-              </span>
-            ))}
+          <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/10' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>
+            <p className={`text-[10px] mb-2 uppercase tracking-wide font-medium ${isUser ? 'text-white/60' : 'text-content-secondary'}`}>Sources</p>
+            <div className="flex flex-wrap gap-1">
+              {message.sources.map((s, i) => (
+                <span
+                  key={s.id}
+                  className={`text-[11px] px-2 py-0.5 rounded-full ${isUser ? 'bg-white/20 text-white/90' : 'bg-primary/10 text-primary'}`}
+                >
+                  {s.title}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
