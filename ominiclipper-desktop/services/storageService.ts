@@ -86,13 +86,18 @@ const WRITE_DEBOUNCE_MS = 500;
 // Electron API 类型
 // ============================================
 
+// 扩展 Window 接口以包含 Electron API
+// 注意：使用 [key: string]: any 来避免类型冲突，因为 preload.js 中定义了更多属性
 declare global {
   interface Window {
     electronAPI?: {
+      // 通用 API
       getUserDataPath: () => Promise<string>;
+      // 文件 API
       fileAPI?: {
         moveFile: (sourcePath: string, targetPath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
       };
+      // 存储 API
       storageAPI?: {
         getDataPath: () => Promise<string>;
         readLibrary: () => Promise<LibraryData | null>;
@@ -101,6 +106,7 @@ declare global {
         writeSettings: (data: SettingsData) => Promise<{ success: boolean; error?: string }>;
         migrate: (legacyData: any) => Promise<{ success: boolean; libraryData?: LibraryData; settingsData?: SettingsData; error?: string }>;
       };
+      // MTime API
       mtimeAPI?: {
         readMTime: () => Promise<MTimeData>;
         updateMTime: (itemId: string) => Promise<{ success: boolean }>;
@@ -110,6 +116,7 @@ declare global {
         getAll: () => Promise<Record<string, number>>;
         getCount: () => Promise<number>;
       };
+      // 备份 API
       backupAPI?: {
         createBackup: (data: any) => Promise<{ success: boolean; path?: string; error?: string }>;
         listBackups: () => Promise<BackupInfo[]>;
@@ -118,12 +125,14 @@ declare global {
         cleanupOldBackups: (keepCount: number) => Promise<{ deleted: number; error?: string }>;
         getBackupPath: () => Promise<string>;
       };
+      // 文件夹 API
       folderAPI?: {
         getFoldersPath: () => Promise<string>;
         createFolder: (folderId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
         deleteFolder: (folderId: string) => Promise<{ success: boolean; error?: string }>;
         folderExists: (folderId: string) => Promise<boolean>;
       };
+      // 项目 API
       itemAPI?: {
         getItemsPath: () => Promise<string>;
         saveItemMetadata: (itemId: string, metadata: any) => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -132,6 +141,7 @@ declare global {
         saveItemsIndex: (index: any) => Promise<{ success: boolean; error?: string }>;
         readItemsIndex: () => Promise<any | null>;
       };
+      // 向量搜索 API
       vectorAPI?: {
         initialize: () => Promise<{ success: boolean; error?: string }>;
         index: (id: string, text: string, metadata: any) => Promise<{ success: boolean; error?: string }>;
@@ -139,6 +149,14 @@ declare global {
         delete: (id: string) => Promise<{ success: boolean; error?: string }>;
         getStats: () => Promise<any>;
       };
+      // BM25 全文搜索 API
+      searchAPI?: {
+        index: (id: string, text: string, metadata: any) => Promise<{ success: boolean; error?: string }>;
+        delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+        bm25Search: (query: string, limit: number) => Promise<any[]>;
+        getStats: () => Promise<any>;
+      };
+      // 允许其他属性（来自 preload.js）
       [key: string]: any;
     };
   }
@@ -1157,11 +1175,11 @@ export const getBackupPath = async (): Promise<string> => {
 };
 
 // ============================================
-// 向量索引集成 (Semantic Search)
+// 向量索引集成 (Semantic Search) + BM25 全文索引
 // ============================================
 
 /**
- * 为单个项目创建语义搜索索引
+ * 为单个项目创建语义搜索索引和 BM25 全文索引
  * 异步执行，不阻塞主流程
  */
 const indexItemForSemanticSearch = async (item: ResourceItem): Promise<void> => {
@@ -1177,24 +1195,57 @@ const indexItemForSemanticSearch = async (item: ResourceItem): Promise<void> => 
 
   if (!text.trim()) return;
 
-  await vectorStoreService.indexDocument({
-    id: item.id,
-    text,
-    metadata: {
-      title: item.title,
-      type: item.type,
-      tags: item.tags,
-      createdAt: item.createdAt,
-    },
-  });
+  const metadata = {
+    title: item.title,
+    type: item.type,
+    tags: item.tags,
+    createdAt: item.createdAt,
+  };
+
+  // 并行索引：向量搜索 + BM25 全文搜索
+  await Promise.all([
+    // 向量索引（语义搜索）
+    vectorStoreService.indexDocument({
+      id: item.id,
+      text,
+      metadata,
+    }).catch(err => console.error('[Storage] Vector indexing failed:', err)),
+
+    // BM25 全文索引
+    (async () => {
+      if (window.electronAPI?.searchAPI?.index) {
+        try {
+          await window.electronAPI.searchAPI.index(item.id, text, metadata);
+        } catch (err) {
+          console.error('[Storage] BM25 indexing failed:', err);
+        }
+      }
+    })(),
+  ]);
 };
 
 /**
- * 从语义搜索索引中删除项目
+ * 从语义搜索索引和 BM25 索引中删除项目
  */
 const removeItemFromSemanticSearch = async (itemId: string): Promise<void> => {
   if (!isElectronEnvironment) return;
-  await vectorStoreService.deleteDocument(itemId);
+
+  await Promise.all([
+    // 删除向量索引
+    vectorStoreService.deleteDocument(itemId).catch(err =>
+      console.error('[Storage] Vector delete failed:', err)
+    ),
+    // 删除 BM25 索引
+    (async () => {
+      if (window.electronAPI?.searchAPI?.delete) {
+        try {
+          await window.electronAPI.searchAPI.delete(itemId);
+        } catch (err) {
+          console.error('[Storage] BM25 delete failed:', err);
+        }
+      }
+    })(),
+  ]);
 };
 
 /**

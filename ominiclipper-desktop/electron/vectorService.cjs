@@ -4,10 +4,13 @@
  * Provides local semantic search using:
  * - Transformers.js (all-MiniLM-L6-v2) for embedding
  * - LanceDB for vector storage
+ * - Apache Arrow for schema definition
  */
 
 const path = require('path');
 const fs = require('fs');
+const arrow = require('apache-arrow');
+const { splitIntoChunks } = require('./textChunker.cjs');
 
 // Dynamic imports for ES modules
 let pipeline = null;
@@ -133,12 +136,27 @@ async function initialize(userDataPath) {
     console.log('[VectorService] Connecting to LanceDB:', dbPath);
     db = await lancedb.connect(dbPath);
 
-    // Check if table exists
+    // Check if table exists and has correct schema
     const tables = await db.tableNames();
     if (tables.includes(TABLE_NAME)) {
       table = await db.openTable(TABLE_NAME);
       const count = await table.countRows();
       console.log('[VectorService] Opened existing table with', count, 'documents');
+
+      // Check if schema has doc_id field, if not, recreate table
+      try {
+        const schema = await table.schema();
+        const fields = schema.fields.map(f => f.name);
+        if (!fields.includes('doc_id')) {
+          console.log('[VectorService] Old schema detected without doc_id, recreating table...');
+          await db.dropTable(TABLE_NAME);
+          table = null;
+        }
+      } catch (e) {
+        console.log('[VectorService] Could not check schema, recreating table...');
+        await db.dropTable(TABLE_NAME);
+        table = null;
+      }
     } else {
       console.log('[VectorService] Table will be created on first insert');
       table = null;
@@ -179,45 +197,73 @@ async function embed(text) {
 }
 
 /**
- * Index a document
- * @param {string} id - Document ID
+ * Index a document (with automatic text chunking)
+ * @param {string} docId - Document ID
  * @param {string} text - Document text
  * @param {object} metadata - Document metadata
  */
-async function indexDocument(id, text, metadata) {
+async function indexDocument(docId, text, metadata) {
   if (!isInitialized) {
     return { success: false, error: 'Service not initialized' };
   }
 
   try {
-    const vector = await embed(text);
+    // Split text into chunks for better RAG retrieval
+    const chunks = splitIntoChunks(text, { chunkSize: 800, chunkOverlap: 100 });
 
-    const record = {
-      id: id,
-      text: text.slice(0, 1000), // Store truncated text
-      vector: vector,
-      title: metadata.title || '',
-      type: metadata.type || '',
-      tags: JSON.stringify(metadata.tags || []),
-      createdAt: metadata.createdAt || new Date().toISOString(),
-    };
-
-    if (!table) {
-      // Create table with first record
-      console.log('[VectorService] Creating table with first document');
-      table = await db.createTable(TABLE_NAME, [record]);
-    } else {
-      // Check if document exists and delete it first (upsert)
-      try {
-        await table.delete(`id = '${id}'`);
-      } catch (e) {
-        // Ignore delete errors (document may not exist)
-      }
-      await table.add([record]);
+    if (chunks.length === 0) {
+      return { success: false, error: 'No content to index' };
     }
 
-    console.log('[VectorService] Indexed document:', id);
-    return { success: true };
+    // Delete existing chunks for this document
+    if (table) {
+      try {
+        await table.delete(`doc_id = '${docId}'`);
+        console.log('[VectorService] Deleted existing chunks for document:', docId);
+      } catch (e) {
+        // Ignore - document may not exist
+      }
+    }
+
+    // Generate embeddings and create records for all chunks
+    const records = [];
+    for (const chunk of chunks) {
+      const vector = await embed(chunk.text);
+
+      records.push({
+        id: chunk.id,              // Unique chunk ID
+        doc_id: docId,             // Original document ID
+        text: chunk.text,          // Full chunk text (no truncation)
+        chunk_index: chunk.index,  // Position in document
+        vector: vector,
+        title: metadata.title || '',
+        type: metadata.type || '',
+        tags: JSON.stringify(metadata.tags || []),
+        createdAt: metadata.createdAt || new Date().toISOString(),
+      });
+    }
+
+    if (!table) {
+      // Create table with explicit schema using Apache Arrow
+      console.log('[VectorService] Creating table with explicit schema');
+      const schema = new arrow.Schema([
+        new arrow.Field('id', new arrow.Utf8()),
+        new arrow.Field('doc_id', new arrow.Utf8()),
+        new arrow.Field('text', new arrow.Utf8()),
+        new arrow.Field('chunk_index', new arrow.Int32()),
+        new arrow.Field('vector', new arrow.FixedSizeList(VECTOR_DIM, new arrow.Field('item', new arrow.Float32()))),
+        new arrow.Field('title', new arrow.Utf8(), true),
+        new arrow.Field('type', new arrow.Utf8(), true),
+        new arrow.Field('tags', new arrow.Utf8(), true),
+        new arrow.Field('createdAt', new arrow.Utf8(), true),
+      ]);
+      table = await db.createTable(TABLE_NAME, records, { schema });
+    } else {
+      await table.add(records);
+    }
+
+    console.log('[VectorService] Indexed document:', docId, '- chunks:', records.length);
+    return { success: true, chunksIndexed: records.length };
   } catch (error) {
     console.error('[VectorService] Index error:', error);
     return { success: false, error: error.message };
@@ -227,9 +273,9 @@ async function indexDocument(id, text, metadata) {
 /**
  * Search for similar documents
  * @param {string} query - Search query
- * @param {number} limit - Max results
+ * @param {number} limit - Max results (per document)
  */
-async function search(query, limit = 10) {
+async function search(query, limit = 5) {
   if (!isInitialized || !table) {
     console.log('[VectorService] Search skipped: not initialized or no data');
     return [];
@@ -238,22 +284,41 @@ async function search(query, limit = 10) {
   try {
     const queryVector = await embed(query);
 
-    const results = await table
+    // Search for similar chunks
+    const rawResults = await table
       .search(queryVector)
-      .limit(limit)
+      .limit(limit * 3)  // Get more chunks, then deduplicate
       .execute();
 
-    return results.map(r => ({
-      id: r.id,
-      text: r.text,
-      score: r._distance,
-      metadata: {
-        title: r.title,
-        type: r.type,
-        tags: JSON.parse(r.tags || '[]'),
-        createdAt: r.createdAt,
-      },
-    }));
+    // Aggregate results by doc_id, keeping best chunk per document
+    const docMap = new Map();
+
+    for (const r of rawResults) {
+      const docId = r.doc_id;
+      if (!docMap.has(docId) || r._distance < docMap.get(docId).score) {
+        docMap.set(docId, {
+          id: docId,
+          chunk_id: r.id,
+          text: r.text,
+          score: r._distance,
+          chunk_index: r.chunk_index,
+          metadata: {
+            title: r.title,
+            type: r.type,
+            tags: JSON.parse(r.tags || '[]'),
+            createdAt: r.createdAt,
+          },
+        });
+      }
+    }
+
+    // Convert to array and sort by score
+    const results = Array.from(docMap.values())
+      .sort((a, b) => a.score - b.score)
+      .slice(0, limit);
+
+    console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks');
+    return results;
   } catch (error) {
     console.error('[VectorService] Search error:', error);
     return [];
@@ -261,17 +326,17 @@ async function search(query, limit = 10) {
 }
 
 /**
- * Delete a document from the index
- * @param {string} id - Document ID
+ * Delete a document from the index (all its chunks)
+ * @param {string} docId - Document ID
  */
-async function deleteDocument(id) {
+async function deleteDocument(docId) {
   if (!isInitialized || !table) {
     return { success: false, error: 'Service not initialized' };
   }
 
   try {
-    await table.delete(`id = '${id}'`);
-    console.log('[VectorService] Deleted document:', id);
+    const result = await table.delete(`doc_id = '${docId}'`);
+    console.log('[VectorService] Deleted document:', docId);
     return { success: true };
   } catch (error) {
     console.error('[VectorService] Delete error:', error);

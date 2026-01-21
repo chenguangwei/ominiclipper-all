@@ -9,6 +9,7 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const httpServer = require('./httpServer.cjs');
 const vectorService = require('./vectorService.cjs');
+const searchIndexManager = require('./searchIndexManager.cjs');
 
 // Debug: check what we got from electron
 console.log('Electron module keys:', Object.keys(electron));
@@ -226,8 +227,10 @@ function isAbsolutePath(filePath) {
   return filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
 }
 
-// IPC Handlers for file operations
-ipcMain.handle('fs:readFile', async (event, filePath) => {
+// Register all IPC handlers (must be called after app.whenReady)
+function registerIPCHandlers() {
+  // IPC Handlers for file operations
+  ipcMain.handle('fs:readFile', async (event, filePath) => {
   try {
     // Validate that the path is absolute to avoid ENOENT errors with relative paths
     if (!isAbsolutePath(filePath)) {
@@ -1236,7 +1239,14 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // App events
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Initialize search index manager (BM25 FTS5)
+  const userDataPath = app.getPath('userData');
+  await searchIndexManager.initialize(userDataPath);
+
+  // Register all IPC handlers (must be done after app is ready)
+  registerIPCHandlers();
+
   // Register the localfile protocol handler using registerFileProtocol (simpler API)
   protocol.registerFileProtocol('localfile', (request, callback) => {
     try {
@@ -1315,3 +1325,24 @@ ipcMain.handle('vector:delete', async (event, { id }) => {
 ipcMain.handle('vector:getStats', async () => {
   return await vectorService.getStats();
 });
+
+// ============================================
+// Search Index API (BM25 Full-Text Search)
+// ============================================
+
+ipcMain.handle('search:index', async (event, { id, text, metadata }) => {
+  return await searchIndexManager.indexDocument(id, text, metadata);
+});
+
+ipcMain.handle('search:delete', async (event, { id }) => {
+  return await searchIndexManager.deleteDocument(id);
+});
+
+ipcMain.handle('search:bm25', async (event, { query, limit }) => {
+  return await searchIndexManager.search(query, limit || 10);
+});
+
+ipcMain.handle('search:getStats', async () => {
+  return await searchIndexManager.getStats();
+});
+}

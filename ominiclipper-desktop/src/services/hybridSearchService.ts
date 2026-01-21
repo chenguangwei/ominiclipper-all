@@ -13,6 +13,12 @@ declare global {
         delete: (id: string) => Promise<{ success: boolean }>;
         getStats: () => Promise<{ totalDocs: number; lastUpdated: string; modelLoaded: boolean; dbPath: string }>;
       };
+      searchAPI?: {
+        index: (id: string, text: string, metadata: any) => Promise<{ success: boolean }>;
+        delete: (id: string) => Promise<{ success: boolean }>;
+        bm25Search: (query: string, limit: number) => Promise<BM25SearchResult[]>;
+        getStats: () => Promise<{ totalDocs: number; dbPath: string }>;
+      };
     };
   }
 }
@@ -27,6 +33,14 @@ interface VectorSearchResult {
     tags: string[];
     createdAt: string;
   };
+}
+
+interface BM25SearchResult {
+  id: string;
+  title: string;
+  type: string;
+  text: string;
+  score: number;
 }
 
 export interface HybridSearchOptions {
@@ -89,9 +103,26 @@ export class HybridSearchService {
   }
 
   protected async bm25Search(query: string, limit: number): Promise<SearchResult[]> {
-    // BM25 搜索作为补充，目前返回空数组
-    // 未来可以集成 SQLite FTS5 或其他全文搜索
-    return [];
+    try {
+      // 调用 Electron 主进程的 BM25 全文搜索
+      const results = await window.electronAPI?.searchAPI?.bm25Search(query, limit);
+      if (!results || results.length === 0) {
+        console.log('[HybridSearch] No BM25 results found');
+        return [];
+      }
+
+      // 转换为 SearchResult 格式
+      return results.map((r: BM25SearchResult) => ({
+        id: r.id,
+        title: r.title || 'Untitled',
+        type: r.type || 'document',
+        text: r.text || '',
+        score: r.score || 0,
+      }));
+    } catch (error) {
+      console.error('[HybridSearch] BM25 search failed:', error);
+      return [];
+    }
   }
 
   protected fuseResults(

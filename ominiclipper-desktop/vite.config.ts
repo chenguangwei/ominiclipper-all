@@ -13,6 +13,8 @@ function electronCopyPlugin() {
       const preloadSrc = resolve(__dirname, 'electron/preload.js');
       const httpServerSrc = resolve(__dirname, 'electron/httpServer.cjs');
       const vectorServiceSrc = resolve(__dirname, 'electron/vectorService.cjs');
+      const textChunkerSrc = resolve(__dirname, 'electron/textChunker.cjs');
+      const searchIndexManagerSrc = resolve(__dirname, 'electron/searchIndexManager.cjs');
       const mainDestDir = resolve(__dirname, 'dist-electron/main');
       const preloadDestDir = resolve(__dirname, 'dist-electron/preload');
 
@@ -29,6 +31,14 @@ function electronCopyPlugin() {
       // Copy vectorService.cjs for vector storage service
       if (existsSync(vectorServiceSrc)) {
         copyFileSync(vectorServiceSrc, resolve(mainDestDir, 'vectorService.cjs'));
+      }
+      // Copy textChunker.cjs for text chunking
+      if (existsSync(textChunkerSrc)) {
+        copyFileSync(textChunkerSrc, resolve(mainDestDir, 'textChunker.cjs'));
+      }
+      // Copy searchIndexManager.cjs for BM25 search
+      if (existsSync(searchIndexManagerSrc)) {
+        copyFileSync(searchIndexManagerSrc, resolve(mainDestDir, 'searchIndexManager.cjs'));
       }
       console.log('Electron CJS files copied to dist-electron/');
     }
@@ -58,6 +68,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'utils': path.resolve(__dirname, 'utils'),
+        'hooks': path.resolve(__dirname, 'hooks'),
+        'types': path.resolve(__dirname, 'types'),
       }
     },
     build: {

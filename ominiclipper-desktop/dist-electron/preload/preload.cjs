@@ -222,6 +222,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Get vector store statistics
     getStats: () => ipcRenderer.invoke('vector:getStats'),
   },
+
+  // ============================================
+  // Search Index API (BM25 Full-Text Search)
+  // ============================================
+  searchAPI: {
+    // Index a document for full-text search
+    index: (id, text, metadata) => ipcRenderer.invoke('search:index', { id, text, metadata }),
+
+    // Delete a document from the index
+    delete: (id) => ipcRenderer.invoke('search:delete', { id }),
+
+    // BM25 full-text search
+    bm25Search: (query, limit) => ipcRenderer.invoke('search:bm25', { query, limit }),
+
+    // Get search index statistics
+    getStats: () => ipcRenderer.invoke('search:getStats'),
+  },
 });
 
 // Handle dialog messages from main process

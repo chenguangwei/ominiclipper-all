@@ -7,6 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #668 | 10:54 AM | 🔵 | Service directory structure exploration | ~258 |
-| #663 | 10:52 AM | 🔵 | Chat type definitions examined for RAG functionality | ~296 |
+| #722 | 1:31 PM | 🔴 | Vector service TypeError - Float32 constructor issue | ~307 |
 </claude-mem-context>

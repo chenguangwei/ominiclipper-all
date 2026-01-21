@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "electron": "cross-env NODE_ENV=development ./node_modules/.bin/electron ./dist-electron/main/main.cjs",
+    "electron": "cross-env NODE_ENV=development ./node_modules/.bin/electron ./electron/main.cjs",
+    "electron:dev": "npm run build && cross-env NODE_ENV=development ./node_modules/.bin/electron ./dist-electron/main/main.cjs",
     "electron:preview": "npm run build && cross-env NODE_ENV=production ./node_modules/.bin/electron ./dist-electron/main/main.cjs",
     "electron:build": "npm run build && electron-builder",
     "electron:build:mac": "npm run build && electron-builder --mac",
@@ -17,9 +18,11 @@
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.23.0",
+    "@lancedb/lancedb-darwin-arm64": "^0.22.3",
     "@supabase/supabase-js": "2.39.3",
     "@xenova/transformers": "^2.17.2",
     "apache-arrow": "^18.1.0",
+    "better-sqlite3": "^12.6.2",
     "docx-preview": "^0.3.7",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
@@ -29,6 +32,7 @@
     "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "cross-env": "^7.0.3",
