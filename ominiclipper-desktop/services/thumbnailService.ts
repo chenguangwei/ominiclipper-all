@@ -54,7 +54,16 @@ export const generatePdfThumbnail = async (filePath: string): Promise<string | n
       console.warn('[Thumbnail] Failed to read PDF file');
       return null;
     }
-    const arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0));
+
+    // Handle raw Buffer (Uint8Array) from main process
+    let arrayBuffer: ArrayBuffer;
+    if (fileData.buffer instanceof Uint8Array) {
+      // Use slice(0) to create clean copy without byteOffset issues
+      arrayBuffer = fileData.buffer.slice(0).buffer;
+    } else {
+      // Legacy: decode base64 string
+      arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0)).buffer;
+    }
 
     const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
@@ -95,8 +104,14 @@ export const generateDocxThumbnail = async (filePath: string): Promise<string | 
       return null;
     }
 
-    // Convert base64 to ArrayBuffer
-    const arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0));
+    // Handle raw Buffer or legacy base64
+    let arrayBuffer: ArrayBuffer;
+    if (fileData.buffer instanceof Uint8Array) {
+      // Use slice(0) to create clean copy without byteOffset issues
+      arrayBuffer = fileData.buffer.slice(0).buffer;
+    } else {
+      arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0)).buffer;
+    }
 
     // Dynamic import docx-preview and html2canvas
     const docx = await import('docx-preview');
@@ -153,6 +168,18 @@ export const generateImageThumbnail = async (filePath: string, maxWidth = 300): 
           resolve(null);
           return;
         }
+
+        // Create data URL from buffer (handle both raw Buffer and base64 string)
+        let dataUrl: string;
+        if (fileData.buffer instanceof Uint8Array) {
+          // Raw Buffer - convert to base64 data URL
+          const base64 = Buffer.from(fileData.buffer).toString('base64');
+          dataUrl = `data:image;base64,${base64}`;
+        } else {
+          // Legacy base64 string
+          dataUrl = `data:image;base64,${fileData.buffer}`;
+        }
+
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -171,7 +198,7 @@ export const generateImageThumbnail = async (filePath: string, maxWidth = 300): 
           console.error('[Thumbnail] Failed to load image data');
           resolve(null);
         };
-        img.src = `data:image;base64,${fileData.buffer}`;
+        img.src = dataUrl;
       }).catch((error: any) => {
         console.error('[Thumbnail] Failed to read image file:', error);
         resolve(null);
@@ -215,8 +242,14 @@ export const generateEpubThumbnail = async (filePath: string): Promise<string | 
       return null;
     }
 
-    // Convert base64 to ArrayBuffer
-    const arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0));
+    // Handle raw Buffer or legacy base64
+    let arrayBuffer: ArrayBuffer;
+    if (fileData.buffer instanceof Uint8Array) {
+      // Use slice(0) to create clean copy without byteOffset issues
+      arrayBuffer = fileData.buffer.slice(0).buffer;
+    } else {
+      arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0)).buffer;
+    }
 
     // Dynamic import JSZip
     const JSZip = (await import('jszip')).default;

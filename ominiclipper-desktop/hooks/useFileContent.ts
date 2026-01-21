@@ -4,11 +4,14 @@ import { getFileData } from '../utils/fileHelpers';
 
 export const useFileContent = (item: ResourceItem | null, activeTab: 'details' | 'preview') => {
   const [content, setContent] = useState<ArrayBuffer | null>(null);
+  const [contentItemId, setContentItemId] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadContent = useCallback(async (currentItem: ResourceItem) => {
+    // Track which item we're loading content for
+    const targetItemId = currentItem.id;
     setLoading(true);
     setError(null);
     setContent(null);
@@ -16,7 +19,11 @@ export const useFileContent = (item: ResourceItem | null, activeTab: 'details' |
 
     try {
       const data = await getFileData(currentItem);
-      setContent(data);
+      // Only set content if we're still loading for the same item
+      if (targetItemId === currentItem.id) {
+        setContent(data);
+        setContentItemId(targetItemId);
+      }
 
       // For images, also create a blob URL for direct img tag use
       if (currentItem.type === 'IMAGE') {
@@ -53,11 +60,14 @@ export const useFileContent = (item: ResourceItem | null, activeTab: 'details' |
     }
   }, [item, activeTab, loadContent]);
 
+  // Check if content is stale (belongs to a different item)
+  const isContentStale = item && contentItemId !== item.id;
+
   return {
-    content,
-    url,
-    loading,
-    error,
+    content: isContentStale ? null : content,
+    url: isContentStale ? null : url,
+    loading: loading || (!!item && activeTab === 'preview' && isContentStale),
+    error: isContentStale ? null : error,
     reload,
   };
 };

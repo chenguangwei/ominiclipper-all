@@ -97,13 +97,24 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
     console.log('[fileHelpers] Reading local file via IPC:', filePath);
     const result = await (window as any).electronAPI.readFile(filePath);
     if (result && result.success && result.buffer) {
-      // Convert base64 to ArrayBuffer
-      const binaryString = atob(result.buffer);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      // Check if we received raw Buffer/Uint8Array (preferred)
+      if (result.buffer instanceof Uint8Array) {
+        console.log('[fileHelpers] Received raw Uint8Array, making clean copy. Size:', result.buffer.byteLength);
+        // Use slice(0) to create a clean copy without byteOffset issues
+        // Direct .buffer access can return shared memory with garbage data
+        return result.buffer.slice(0).buffer;
       }
-      return bytes.buffer;
+
+      // Fallback: Decode base64 string (legacy)
+      if (typeof result.buffer === 'string') {
+        console.log('[fileHelpers] Received base64 string, decoding...');
+        const binaryString = atob(result.buffer);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
     }
   }
 

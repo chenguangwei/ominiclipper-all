@@ -51,8 +51,11 @@ const WordRenderer: React.FC<WordRendererProps> = ({
         // Clear previous content
         container.innerHTML = '';
 
+        // Create a copy of the buffer to prevent detachment issues
+        const contentCopy = content.slice(0);
+
         // Render Word document
-        await docxPreview.renderAsync(content, container, undefined, {
+        await docxPreview.renderAsync(contentCopy, container, undefined, {
           className: 'docx-preview-content',
           inWrapper: true,
           ignoreWidth: false,

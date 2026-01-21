@@ -322,8 +322,9 @@ function registerIPCHandlers() {
 
     return {
       success: true,
-      buffer: data.toString('base64'),  // Always return base64 for binary compatibility
-      content: isTextFile ? data.toString('utf-8') : null,  // Return text content for text files
+      // Return raw Buffer (Uint8Array) - Electron handles serialization efficiently
+      buffer: data,
+      content: isTextFile ? data.toString('utf-8') : null,
       mimeType
     };
   } catch (error) {

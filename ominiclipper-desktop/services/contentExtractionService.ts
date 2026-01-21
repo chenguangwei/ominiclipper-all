@@ -50,7 +50,16 @@ export const extractPdfContent = async (filePath: string, maxLength = 500): Prom
       console.warn('[Content] Failed to read PDF file');
       return '';
     }
-    const arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0));
+
+    // Handle raw Buffer (Uint8Array) from main process
+    let arrayBuffer;
+    if (fileData.buffer instanceof Uint8Array) {
+      // Use slice(0) to create clean copy without byteOffset issues
+      arrayBuffer = fileData.buffer.slice(0).buffer;
+    } else {
+      // Legacy: decode base64 string
+      arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0)).buffer;
+    }
 
     const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
     const pdf = await loadingTask.promise;
@@ -84,7 +93,15 @@ export const extractDocxContent = async (filePath: string, maxLength = 500): Pro
     const fileData = await (window as any).electronAPI.readFile(filePath);
     if (!fileData?.success) return '';
 
-    const arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0));
+    // Handle raw Buffer or legacy base64
+    let arrayBuffer: ArrayBuffer;
+    if (fileData.buffer instanceof Uint8Array) {
+      // Use slice(0) to create clean copy without byteOffset issues
+      arrayBuffer = fileData.buffer.slice(0).buffer;
+    } else {
+      arrayBuffer = Uint8Array.from(atob(fileData.buffer), c => c.charCodeAt(0)).buffer;
+    }
+
     const docx = await import('docx-preview');
     const container = document.createElement('div');
     container.style.display = 'none';
