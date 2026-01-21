@@ -96,9 +96,9 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
   if (filePath && (window as any).electronAPI?.readFile) {
     console.log('[fileHelpers] Reading local file via IPC:', filePath);
     const result = await (window as any).electronAPI.readFile(filePath);
-    if (result && result.success && result.data) {
+    if (result && result.success && result.buffer) {
       // Convert base64 to ArrayBuffer
-      const binaryString = atob(result.data);
+      const binaryString = atob(result.buffer);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);

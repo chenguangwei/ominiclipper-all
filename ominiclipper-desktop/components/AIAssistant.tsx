@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Icon from './Icon';
-import { chatService } from '../src/services/chatService';
-import { hybridSearchService } from '../src/services/hybridSearchService';
+import { chatService } from '../services/chatService';
+import { hybridSearchService } from '../services/hybridSearchService';
 import { subscriptionManager } from '../services/subscriptionManager';
 import { llmProviderService } from '../services/llmProvider';
-import { ChatMessage, SearchResult } from '../src/types/chat';
+import { ChatMessage, SearchResult } from '../types/chat';
 
 interface AIAssistantProps {
   isOpen: boolean;

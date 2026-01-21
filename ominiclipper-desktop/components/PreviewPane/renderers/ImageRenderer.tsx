@@ -1,7 +1,7 @@
 import React from 'react';
-import { ResourceItem, ColorMode } from 'types';
-import Icon from 'components/Icon';
-import { getValidFilePath } from 'utils/fileHelpers';
+import { ResourceItem, ColorMode, ResourceType } from '../../../types';
+import Icon from '../../Icon';
+import { getValidFilePath } from '../../../utils/fileHelpers';
 
 interface ImageRendererProps {
   item: ResourceItem;

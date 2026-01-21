@@ -1,5 +1,5 @@
 import React from 'react';
-import { ResourceItem, ColorMode } from 'types';
+import { ResourceItem, ColorMode, ResourceType } from '../../../types';
 import Icon from '../../Icon';
 
 interface WebRendererProps {

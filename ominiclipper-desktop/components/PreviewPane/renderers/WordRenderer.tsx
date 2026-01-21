@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { ResourceItem, ColorMode } from 'types';
-import Icon from 'components/Icon';
+import { ResourceItem, ColorMode, ResourceType } from '../../../types';
+import Icon from '../../Icon';
 import * as docxPreview from 'docx-preview';
 
 interface WordRendererProps {
