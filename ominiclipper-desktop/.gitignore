@@ -26,5 +26,7 @@ release
 *.njsproj
 *.sln
 *.sw?
+dist/
+dist-electron/
 
 

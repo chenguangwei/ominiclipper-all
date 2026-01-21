@@ -2,10 +2,44 @@
  * OmniCollector Desktop - Electron Main Process
  */
 
-const electron = require('electron');
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, protocol, net } = electron;
 const path = require('path');
 const fs = require('fs');
+
+// Get electron module
+let electron;
+try {
+  electron = require('electron');
+} catch (e) {
+  console.error('Failed to require electron:', e);
+  process.exit(1);
+}
+
+console.log('Electron type:', typeof electron);
+console.log('Electron is string:', typeof electron === 'string');
+
+// If electron is a string (path), we need to require the actual electron binary
+let app, BrowserWindow, Menu, shell, ipcMain, dialog, protocol, net;
+if (typeof electron === 'string') {
+  console.log('Electron returned a path string, loading actual electron from:', electron);
+  const electronPath = path.join(__dirname, '..', '..', 'node_modules', 'electron', 'dist', 'Electron.app', 'Contents', 'MacOS', 'Electron');
+  console.log('Full electron path:', electronPath);
+  // We can't require the binary directly, we need to use the correct electron package
+  // Let's try requiring electron differently
+  try {
+    const electronModule = require(electron);
+    console.log('Loaded electron module type:', typeof electronModule);
+    if (electronModule && typeof electronModule === 'object') {
+      ({ app, BrowserWindow, Menu, shell, ipcMain, dialog, protocol, net } = electronModule);
+    }
+  } catch (e2) {
+    console.error('Failed to load electron binary:', e2);
+  }
+} else {
+  ({ app, BrowserWindow, Menu, shell, ipcMain, dialog, protocol, net } = electron);
+}
+
+console.log('After parsing - ipcMain:', typeof ipcMain);
+console.log('After parsing - protocol:', typeof protocol);
 const { pathToFileURL } = require('url');
 const httpServer = require('./httpServer.cjs');
 const vectorService = require('./vectorService.cjs');
@@ -25,13 +59,18 @@ function createWindow() {
   // In development, we run from dist-electron/main/main.cjs
   const preloadPath = path.join(__dirname, '../preload/preload.cjs');
 
+  // Check for icon file
+  const iconPath = path.join(__dirname, '../../dist/assets/icon.png');
+  const iconExists = fs.existsSync(iconPath);
+  console.log('[createWindow] Icon path:', iconPath, 'exists:', iconExists);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     title: 'OmniCollector',
-    icon: path.join(__dirname, '../../public/icon.png'),
+    // icon: iconExists ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -42,17 +81,40 @@ function createWindow() {
     show: false
   });
 
+  console.log('[createWindow] BrowserWindow created');
+
+  // Add error handling for window
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[createWindow] Failed to load:', errorCode, errorDescription);
+  });
+
   // Load the app
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    console.log('[createWindow] Loading dev URL...');
+    mainWindow.loadURL('http://localhost:3000').then(() => {
+      console.log('[createWindow] Dev URL loaded successfully');
+    }).catch(err => {
+      console.error('[createWindow] Failed to load dev URL:', err);
+    });
     // Open DevTools in development
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+    const indexPath = path.join(__dirname, '../../dist/index.html');
+    console.log('[createWindow] Loading production file:', indexPath);
+    mainWindow.loadFile(indexPath).then(() => {
+      console.log('[createWindow] Production file loaded successfully');
+    }).catch(err => {
+      console.error('[createWindow] Failed to load production file:', err);
+    });
   }
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
+    console.log('[createWindow] Window ready to show');
     mainWindow.show();
   });
 
@@ -1240,8 +1302,13 @@ protocol.registerSchemesAsPrivileged([
 
 // App events
 app.whenReady().then(async () => {
+  console.log('[App] whenReady fired');
+
   // Initialize search index manager (BM25 FTS5)
   const userDataPath = app.getPath('userData');
+  console.log('[App] userDataPath:', userDataPath);
+
+  // Now with fixed require() instead of dynamic import
   await searchIndexManager.initialize(userDataPath);
 
   // Register all IPC handlers (must be done after app is ready)

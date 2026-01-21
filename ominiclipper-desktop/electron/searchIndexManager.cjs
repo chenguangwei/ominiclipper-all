@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { splitIntoChunks } = require('./textChunker.cjs');
 
-// Dynamic import for ES modules
+// Use require for native module (more stable in Electron)
 let Database = null;
 
 // Service state
@@ -18,12 +18,17 @@ let dbPath = null;
 const TABLE_NAME = 'documents_fts';
 
 /**
- * Load better-sqlite3 dynamically
+ * Load better-sqlite3 using require (stable for native modules)
  */
-async function loadModules() {
+function loadModules() {
   if (!Database) {
-    const betterSqlite3 = await import('better-sqlite3');
-    Database = betterSqlite3.default;
+    try {
+      Database = require('better-sqlite3');
+      console.log('[SearchIndex] better-sqlite3 loaded successfully');
+    } catch (e) {
+      console.error('[SearchIndex] Failed to load better-sqlite3:', e);
+      throw e;
+    }
   }
 }
 
@@ -33,7 +38,8 @@ async function loadModules() {
  */
 async function initialize(userDataPath) {
   try {
-    await loadModules();
+    console.log('[SearchIndex] Initializing...');
+    loadModules(); // Now synchronous
 
     // Set up database path
     const basePath = path.join(userDataPath, 'OmniCollector');
@@ -43,6 +49,7 @@ async function initialize(userDataPath) {
     dbPath = path.join(basePath, 'search-index.db');
 
     // Connect to database
+    console.log('[SearchIndex] Connecting to database:', dbPath);
     db = new Database(dbPath);
 
     // Enable WAL mode for better performance
