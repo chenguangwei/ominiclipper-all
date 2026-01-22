@@ -9,7 +9,7 @@ import { ResourceItem, ResourceType } from '../types';
 import Icon from './Icon';
 import DocxViewer from './DocxViewer';
 import * as documentViewer from '../services/documentViewer';
-import { formatFileSize, getUsablePath, isElectron, readLocalFileAsDataUrl } from '../services/fileManager';
+import { formatFileSize, getUsablePath, isElectron, readLocalFileAsDataUrl, recoverItemPath } from '../services/fileManager';
 
 interface DocumentViewerProps {
   item: ResourceItem;
@@ -55,7 +55,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
         return;
       }
 
-      // For PDF files, use native Chromium viewer via custom protocol or data URL
+      // For PDF files, use native Chromium viewer via data URL
       if (item.type === ResourceType.PDF) {
         setUseNativeViewer(true);
 
@@ -67,22 +67,37 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
           return;
         }
 
-        // Priority 2: Local file in Electron - use localfile protocol or read as data URL
+        // Priority 2: Local file in Electron - read as data URL
         if (isElectron()) {
-          // Use localfile protocol if localPath exists
-          if (item.localPath) {
-            console.log('Using localfile protocol for PDF:', item.localPath);
-            const protocolUrl = `localfile://${item.localPath}`;
-            setResolvedPath(protocolUrl);
-            setIsLoading(false);
-            return;
+          // Try localPath first
+          let filePath = item.localPath;
+
+          // If localPath is missing or path is a stale blob, try to recover
+          if (!filePath || (item.path && item.path.startsWith('blob:'))) {
+            console.log('DocumentViewer: Checking for path recovery...');
+            const recovered = await recoverItemPath(item);
+            if (recovered) {
+              console.log('DocumentViewer: Path recovered:', recovered);
+              filePath = recovered;
+            }
           }
 
-          // Fallback: try to read file from path
-          const filePath = item.path || item.originalPath;
-          if (filePath && !filePath.startsWith('http')) {
+          // If we have a valid file path (not blob/http), read it as data URL
+          if (filePath && !filePath.startsWith('http') && !filePath.startsWith('blob:') && !filePath.startsWith('data:')) {
             console.log('Reading file as data URL from:', filePath);
             const dataUrl = await readLocalFileAsDataUrl(filePath);
+            if (dataUrl) {
+              setResolvedPath(dataUrl);
+              setIsLoading(false);
+              return;
+            }
+          }
+
+          // Fallback: try item.path or originalPath if not blob
+          const fallbackPath = item.path || item.originalPath;
+          if (fallbackPath && !fallbackPath.startsWith('http') && !fallbackPath.startsWith('blob:')) {
+            console.log('Fallback: Reading from', fallbackPath);
+            const dataUrl = await readLocalFileAsDataUrl(fallbackPath);
             if (dataUrl) {
               setResolvedPath(dataUrl);
               setIsLoading(false);
@@ -98,17 +113,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
           return;
         }
 
-        // Priority 4: If path is a local file path, try reading it
-        if (item.path && !item.path.startsWith('http') && !item.path.startsWith('blob:')) {
-          const dataUrl = await readLocalFileAsDataUrl(item.path);
-          if (dataUrl) {
-            setResolvedPath(dataUrl);
-            setIsLoading(false);
-            return;
-          }
-        }
-
-        setError('Unable to resolve PDF path');
+        setError('Unable to resolve PDF path. The file may be missing.');
         setIsLoading(false);
         return;
       }
@@ -117,20 +122,50 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
       setUseNativeViewer(false);
 
       // If it's a local file reference in Electron, read it as data URL
-      if (item.storageMode === 'reference' && item.localPath && isElectron()) {
-        console.log('Loading local file:', item.localPath);
-        setIsLoading(true);
-        const dataUrl = await readLocalFileAsDataUrl(item.localPath);
-        if (dataUrl) {
-          console.log('Local file loaded successfully, size:', dataUrl.length);
-          setResolvedPath(dataUrl);
-        } else {
-          console.error('Failed to load local file');
-          setResolvedPath(null);
-          setError('Failed to read local file. The file may have been moved or deleted.');
-          setIsLoading(false);
+      if (isElectron()) {
+        let filePath = item.localPath;
+
+        // If localPath is missing or path is a stale blob, try to recover
+        if (!filePath || (item.path && item.path.startsWith('blob:'))) {
+          console.log('DocumentViewer: Checking for path recovery...');
+          const recovered = await recoverItemPath(item);
+          if (recovered) {
+            console.log('DocumentViewer: Path recovered:', recovered);
+            filePath = recovered;
+          }
         }
-        return;
+
+        // Read the file if we have a valid path
+        if (filePath && !filePath.startsWith('http') && !filePath.startsWith('blob:') && !filePath.startsWith('data:')) {
+          console.log('Loading local file:', filePath);
+          setIsLoading(true);
+          const dataUrl = await readLocalFileAsDataUrl(filePath);
+          if (dataUrl) {
+            console.log('Local file loaded successfully, size:', dataUrl.length);
+            setResolvedPath(dataUrl);
+          } else {
+            console.error('Failed to load local file');
+            setResolvedPath(null);
+            setError('Failed to read local file. The file may have been moved or deleted.');
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        // Fallback: try item.path if not blob
+        if (item.path && !item.path.startsWith('http') && !item.path.startsWith('blob:')) {
+          console.log('Fallback: Reading from', item.path);
+          setIsLoading(true);
+          const dataUrl = await readLocalFileAsDataUrl(item.path);
+          if (dataUrl) {
+            setResolvedPath(dataUrl);
+          } else {
+            setResolvedPath(null);
+            setError('Failed to read local file. The file may have been moved or deleted.');
+            setIsLoading(false);
+          }
+          return;
+        }
       }
 
       // For embedded data or other URLs, use as-is
@@ -139,7 +174,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
     };
 
     resolvePath();
-  }, [rawDocumentPath, item.storageMode, item.localPath, item.type, item.embeddedData]);
+  }, [rawDocumentPath, item.storageMode, item.localPath, item.type, item.embeddedData, item.path]);
 
   const loadDocument = useCallback(async () => {
     // For native viewer (PDF), we don't need to load via documentViewer service

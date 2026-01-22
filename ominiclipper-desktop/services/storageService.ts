@@ -522,25 +522,64 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
   saveItems(items);
 
   // 如果 folderId 改变，移动文件到新文件夹
-  if (isElectronEnvironment && newFolderId !== oldFolderId && oldItem.localPath) {
+  if (isElectronEnvironment && newFolderId !== oldFolderId) {
     try {
-      // 构建新路径
-      const fileName = pathUtils.basename(oldItem.localPath!);
-      const userDataPath = await window.electronAPI!.getUserDataPath();
-      const storagePath = pathUtils.join(userDataPath, 'OmniCollector');
+      // 获取文件名
+      let fileName = '';
+      let sourcePath = '';
 
-      // 目标路径：folders/{folderId}/
-      const targetDir = pathUtils.join(storagePath, 'folders', newFolderId || 'uncategorized');
-      const targetPath = pathUtils.join(targetDir, fileName);
+      if (oldItem.localPath) {
+        // reference 模式：使用 localPath
+        fileName = pathUtils.basename(oldItem.localPath);
+        sourcePath = oldItem.localPath;
+      } else if (oldItem.originalPath) {
+        // embed 模式或只有 originalPath：尝试从 storage 获取文件名
+        fileName = pathUtils.basename(oldItem.originalPath);
+        // 尝试从 fileStorage 获取实际文件路径
+        if ((window as any).electronAPI?.fileStorageAPI) {
+          const storageFilePath = await (window as any).electronAPI.fileStorageAPI.getFilePath(oldItem.id, fileName);
+          if (storageFilePath) {
+            sourcePath = storageFilePath;
+          }
+        }
+      }
 
-      // 移动文件
-      const result = await window.electronAPI!.fileAPI!.moveFile(oldItem.localPath!, targetPath);
-      if (result.success) {
-        // 更新 localPath 和 path
-        items[index].localPath = targetPath;
-        items[index].path = targetPath;
-        saveItems(items);
-        console.log('[Storage] Moved file to folder:', targetPath);
+      if (!fileName) {
+        // 尝试从 embeddedData 的 originalPath 恢复文件名
+        fileName = oldItem.originalPath?.split('/').pop() || `${oldItem.id}.pdf`;
+      }
+
+      if (fileName) {
+        const userDataPath = await window.electronAPI!.getUserDataPath();
+        const storagePath = pathUtils.join(userDataPath, 'OmniCollector');
+        const targetDir = pathUtils.join(storagePath, 'folders', newFolderId || 'uncategorized');
+
+        let targetPath: string | null = null;
+
+        if (sourcePath && oldItem.localPath) {
+          // reference 模式：使用 fileAPI.moveFile
+          const targetFilePath = pathUtils.join(targetDir, fileName);
+          const result = await window.electronAPI!.fileAPI!.moveFile(sourcePath, targetFilePath);
+          if (result.success) {
+            targetPath = targetFilePath;
+            items[index].localPath = targetPath;
+            items[index].path = targetPath;
+            console.log('[Storage] Moved reference file to folder:', targetPath);
+          }
+        } else if ((window as any).electronAPI?.fileStorageAPI?.moveFileToFolder) {
+          // embed 模式：使用 fileStorageAPI.moveFileToFolder
+          const result = await (window as any).electronAPI.fileStorageAPI.moveFileToFolder(oldItem.id, fileName, newFolderId || 'uncategorized');
+          if (result.success) {
+            targetPath = result.path;
+            items[index].localPath = targetPath;
+            items[index].path = targetPath;
+            console.log('[Storage] Moved embed file to folder:', targetPath);
+          }
+        }
+
+        if (targetPath) {
+          saveItems(items);
+        }
       }
     } catch (error) {
       console.error('[Storage] Failed to move file to new folder:', error);

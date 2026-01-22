@@ -75,7 +75,7 @@ const App: React.FC = () => {
     title: string;
     message: string;
     onConfirm: () => void;
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
 
   // Document viewer state
   const [documentViewerItem, setDocumentViewerItem] = useState<ResourceItem | null>(null);
@@ -507,7 +507,7 @@ const App: React.FC = () => {
 
   const selectedItem = useMemo(() =>
     items.find(i => i.id === selectedItemId) || null
-  , [selectedItemId, items]);
+    , [selectedItemId, items]);
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
@@ -663,10 +663,40 @@ const App: React.FC = () => {
           localPath = electronFilePath;
           path = electronFilePath;
         }
+      } else if ((window as any).electronAPI?.fileStorageAPI) {
+        // No Electron file path but we have storage API - read file and save via API
+        // This handles web drops where file.path is not available
+        console.log('[App] No file path, reading file as base64 for storage');
+        try {
+          const itemId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const arrayBuffer = await file.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          let binaryString = '';
+          for (let i = 0; i < uint8Array.length; i++) {
+            binaryString += String.fromCharCode(uint8Array[i]);
+          }
+          const base64Data = btoa(binaryString);
+
+          // Create storage directory and save file
+          await (window as any).electronAPI.fileStorageAPI.createItemStorage(itemId);
+          const saveResult = await (window as any).electronAPI.fileStorageAPI.saveFileToStorage(itemId, file.name, base64Data);
+
+          if (saveResult.success) {
+            localPath = saveResult.path;
+            path = saveResult.path;
+            console.log('[App] File saved to storage via API:', saveResult.path);
+          } else {
+            throw new Error(saveResult.error || 'Failed to save file');
+          }
+        } catch (error) {
+          console.error('[App] Failed to save file via storage API:', error);
+          // Last resort fallback - use blob URL (won't persist)
+          path = URL.createObjectURL(file);
+        }
       } else {
-        // No Electron API or no file path, use reference mode
-        localPath = electronFilePath;
-        path = electronFilePath || URL.createObjectURL(file);
+        // No Electron API available at all - use blob URL (won't persist across restarts)
+        console.warn('[App] No storage API available, using blob URL (will not persist)');
+        path = URL.createObjectURL(file);
       }
     } else {
       // Reference mode - store original path only

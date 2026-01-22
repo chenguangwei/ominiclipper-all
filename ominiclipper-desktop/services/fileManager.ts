@@ -470,8 +470,36 @@ export function isElectron(): boolean {
 }
 
 /**
+ * [New] Recover file path using ID if localPath is missing or invalid
+ */
+export async function recoverItemPath(item: ResourceItem): Promise<string | null> {
+  if (!isElectron() || !item.id) return null;
+
+  try {
+    // Try to guess file name if not present
+    const fileName = item.title || (item.originalPath ? getFileNameFromPath(item.originalPath) : 'file');
+
+    // Call backend to find the file (supports auto-scan and legacy storage fallback)
+    if ((window as any).electronAPI?.fileStorageAPI?.getFilePath) {
+      const recoveredPath = await (window as any).electronAPI.fileStorageAPI.getFilePath(item.id, fileName);
+      if (recoveredPath) {
+        // Verify the file actually exists
+        if (await (window as any).electronAPI.fileExists(recoveredPath)) {
+          console.log('[FileManager] Automatically recovered file path:', recoveredPath);
+          return recoveredPath;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[FileManager] Path recovery failed:', e);
+  }
+  return null;
+}
+
+/**
  * Read a local file and return as data URL (Electron only)
  * Handles blob URLs, local file paths, and non-file URLs
+ * Returns null on errors instead of throwing, allowing caller to retry with path recovery
  */
 export async function readLocalFileAsDataUrl(filePath: string): Promise<string | null> {
   if (!isElectron()) {
@@ -479,30 +507,32 @@ export async function readLocalFileAsDataUrl(filePath: string): Promise<string |
   }
 
   // Handle blob URLs (created during drag & drop)
+  // [Fix] Don't throw error if blob is expired (404), just return null to trigger recovery
   if (filePath.startsWith('blob:')) {
     try {
-      console.log('Fetching blob URL:', filePath.substring(0, 50) + '...');
+      console.log('[FileManager] Fetching blob URL:', filePath.substring(0, 50) + '...');
       const response = await fetch(filePath);
       if (response.ok) {
         const blob = await response.blob();
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
+          reader.onerror = (e) => reject(e);
           reader.readAsDataURL(blob);
         });
       }
-      console.error('Failed to fetch blob:', response.statusText);
+      // [Fix] Don't throw error if blob is expired (404), just return null to trigger recovery
+      console.warn('[FileManager] Blob URL is expired (404):', filePath);
       return null;
     } catch (e) {
-      console.error('Error reading blob URL:', e);
+      console.warn('[FileManager] Error reading blob URL (likely expired):', e);
       return null;
     }
   }
 
   // Skip non-file URLs (http, data, etc.)
   if (!filePath || filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('data:')) {
-    console.log('Skipping non-file URL:', filePath?.substring(0, 50));
+    console.log('[FileManager] Skipping non-file URL:', filePath?.substring(0, 50));
     return null;
   }
 
@@ -511,10 +541,10 @@ export async function readLocalFileAsDataUrl(filePath: string): Promise<string |
     if (result.success) {
       return result.dataUrl;
     }
-    console.error('Failed to read file:', result.error);
+    console.error('[FileManager] Failed to read file:', result.error);
     return null;
   } catch (e) {
-    console.error('Error reading local file:', e);
+    console.error('[FileManager] Error reading local file:', e);
     return null;
   }
 }

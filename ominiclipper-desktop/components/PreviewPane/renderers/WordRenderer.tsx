@@ -24,7 +24,8 @@ const WordRenderer: React.FC<WordRendererProps> = ({
   const isLight = colorMode === 'light';
 
   useEffect(() => {
-    if (!content || loading || error) {
+    // 增加 content.byteLength 检查，防止空数据渲染
+    if (!content || content.byteLength === 0 || loading || error) {
       return;
     }
 

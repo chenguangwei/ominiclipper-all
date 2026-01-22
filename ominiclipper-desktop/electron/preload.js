@@ -93,6 +93,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Read item metadata
     readItemMetadata: (itemId) => ipcRenderer.invoke('fileStorage:readItemMetadata', itemId),
 
+    // Move file to folder directory (for folder migration)
+    moveFileToFolder: (itemId, fileName, folderId) =>
+      ipcRenderer.invoke('fileStorage:moveFileToFolder', itemId, fileName, folderId),
+
     // Save thumbnail
     saveThumbnail: (itemId, dataUrl) =>
       ipcRenderer.invoke('fileStorage:saveThumbnail', itemId, dataUrl),

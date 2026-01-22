@@ -7,5 +7,59 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #660 | 10:51 AM | ⚖️ | Switching to main branch for feature implementation | ~280 |
+| #910 | 11:54 PM | 🔴 | Enhanced File Path Recovery in Electron Main Process | ~332 |
+| #909 | 11:53 PM | 🔵 | Examined Main Electron Process File | ~345 |
+| #905 | 11:48 PM | 🔵 | DocumentViewer Full-Screen vs Preview Functionality Gap Identified | ~355 |
+| #897 | 11:25 PM | ✅ | Enhanced File Path Recovery System with Legacy Storage Support | ~342 |
+| #888 | 10:27 PM | 🔴 | Fixed macOS File Name Normalization in File Copy Process | ~344 |
+| #887 | " | 🔵 | Examined File Copy Infrastructure in main.cjs | ~292 |
+| #886 | " | 🔴 | Enhanced File Path Resolution for macOS NFD/NFC Encoding Issues | ~315 |
+| #884 | 10:26 PM | 🔵 | Examined Electron IPC File Reading Handler | ~297 |
+| #883 | " | 🔵 | Found File Copy IPC Handler in Electron Main Process | ~280 |
+| #882 | 10:25 PM | 🔴 | Fixed macOS Unicode Filename Encoding Issues | ~412 |
+| #880 | 10:19 PM | 🔵 | Verification Check of main.cjs File Modifications | ~256 |
+| #859 | 7:48 PM | 🔴 | Buffer Memory Sharing Issue in File Processing | ~364 |
+| #840 | 7:42 PM | ✅ | Optimized File Buffer Handling in Electron Main Process | ~309 |
+| #839 | " | 🔵 | Found IPC File Reader Path Validation Logic | ~354 |
+| #832 | 7:14 PM | 🔴 | Confirmed LanceDB API Fix Applied | ~275 |
+| #814 | 6:41 PM | 🔴 | Examined Electron Main Process File Protocol Handler | ~278 |
+| #813 | 6:40 PM | 🔵 | Found Custom localfile Protocol Handler in Electron Main Process | ~301 |
+| #812 | " | 🔵 | Examining Electron Main Process Protocol Registration | ~315 |
+| #796 | 6:36 PM | 🔴 | Comprehensive PDF Worker CDN Dependency Resolution | ~362 |
+| #776 | 6:20 PM | 🔴 | PDF Preview Functionality Broken | ~282 |
+| #774 | 6:09 PM | 🔵 | Examined vectorService.cjs for LanceDB API Issue | ~255 |
+| #757 | 1:52 PM | 🔴 | Critical Electron initialization bug discovered | ~310 |
+| #756 | 1:51 PM | 🔵 | Examined file path validation and error handling in file preview system | ~383 |
+| #755 | " | ✅ | Added documentation comment to main.cjs IPC handlers | ~221 |
+| #754 | " | 🔄 | Removed duplicate getMimeType function from main.cjs | ~239 |
+| #753 | " | 🟣 | BM25 search index manager initialized in main process | ~273 |
+| #752 | " | 🟣 | BM25 search IPC integration added to main process | ~277 |
+| #751 | " | 🔵 | BM25 search implementation found in main.cjs | ~282 |
+| #750 | " | 🟣 | BM25 search API handlers implemented in main branch | ~308 |
+| #749 | 1:50 PM | 🔵 | File read IPC handler implementation in main process | ~280 |
+| #727 | 1:37 PM | ✅ | Vector service copied and application rebuilt successfully | ~284 |
+| #726 | " | 🟣 | Enhanced vector service with schema migration and Apache Arrow support | ~314 |
+| #725 | " | 🔴 | Vector search schema switched to Apache Arrow format | ~310 |
+| #724 | " | 🟣 | Vector service enhanced with explicit schema management | ~315 |
+| #723 | 1:31 PM | ✅ | Updated LanceDB schema import pattern in vector service | ~309 |
+| #721 | 1:30 PM | 🔴 | Vector service schema validation and migration added | ~270 |
+| #720 | 1:29 PM | 🔴 | Vector database schema compatibility error with missing doc_id field | ~313 |
+| #719 | 1:26 PM | 🔴 | LanceDB table creation fixed with explicit schema definition | ~303 |
+| #718 | " | 🟣 | Added LanceDB schema definition for document chunks | ~297 |
+| #717 | " | 🔄 | Vector service schema definition moved inline for clarity | ~302 |
+| #716 | 1:25 PM | 🟣 | Vector service enhanced with intelligent text chunking | ~316 |
+| #710 | 11:25 AM | ✅ | Enhanced BM25 search with document chunking and aggregation | ~317 |
+| #709 | " | 🟣 | Enhanced search index with automatic text chunking | ~316 |
+| #708 | " | 🟣 | BM25 search implementation created with SQLite FTS5 | ~310 |
+
+### Jan 22, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #927 | 9:48 AM | 🟣 | Automatic File Migration for Embed Mode Fully Implemented | ~452 |
+| #926 | " | 🟣 | IPC Handler for Automatic File Migration Implemented | ~366 |
+| #925 | " | ✅ | File Management Enhancement - moveFileToFolder API Added | ~271 |
+| #924 | 9:47 AM | 🔵 | File Storage Architecture Gap Identified for Embed Mode Migration | ~447 |
+| #922 | 9:46 AM | 🔵 | Electron Backend Storage Architecture Analyzed | ~444 |
+| #917 | 9:43 AM | 🔵 | Omniclipper Desktop Comprehensive Codebase Analysis Completed | ~420 |
 </claude-mem-context>

@@ -106,6 +106,20 @@ export async function readItemMetadata(
 }
 
 /**
+ * Move item file to folder directory (for folder migration)
+ */
+export async function moveFileToFolder(
+  itemId: string,
+  fileName: string,
+  folderId: string
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  if (isElectron()) {
+    return await (window as any).electronAPI.fileStorageAPI.moveFileToFolder(itemId, fileName, folderId);
+  }
+  return { success: false, error: 'Not in Electron environment' };
+}
+
+/**
  * Import a file and create item storage
  */
 export async function importFile(
