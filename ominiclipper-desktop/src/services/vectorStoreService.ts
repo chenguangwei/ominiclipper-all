@@ -313,6 +313,27 @@ class VectorStoreService {
   }
 
   /**
+   * Check for missing indexes
+   */
+  async checkMissing(ids: string[]): Promise<string[]> {
+    if (!isElectron || !window.electronAPI?.vectorAPI?.checkMissing) {
+      console.warn('[VectorStore] checkMissing unavailable');
+      return ids; // Assume all missing if not available
+    }
+
+    try {
+      // Ensure initialized
+      if (!this.initialized) {
+        await this.initialize();
+      }
+      return await window.electronAPI.vectorAPI.checkMissing(ids);
+    } catch (error) {
+      console.error('[VectorStore] checkMissing error:', error);
+      return ids;
+    }
+  }
+
+  /**
    * Check if vector search is available
    */
   isAvailable(): boolean {

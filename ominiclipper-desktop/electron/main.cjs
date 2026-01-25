@@ -1549,9 +1549,15 @@ app.on('before-quit', () => {
 // Vector Store API (Semantic Search)
 // ============================================
 
-ipcMain.handle('vector:initialize', async () => {
+ipcMain.handle('vector:initialize', async (event, { modelId } = {}) => {
   const userDataPath = app.getPath('userData');
-  return await vectorService.initialize(userDataPath);
+  return await vectorService.initialize(userDataPath, modelId);
+});
+
+// Alias for switching model (re-initializes)
+ipcMain.handle('vector:setModel', async (event, { modelId }) => {
+  const userDataPath = app.getPath('userData');
+  return await vectorService.initialize(userDataPath, modelId);
 });
 
 ipcMain.handle('vector:index', async (event, { id, text, metadata }) => {
@@ -1568,6 +1574,10 @@ ipcMain.handle('vector:delete', async (event, { id }) => {
 
 ipcMain.handle('vector:getStats', async () => {
   return await vectorService.getStats();
+});
+
+ipcMain.handle('vector:checkMissing', async (event, { ids }) => {
+  return await vectorService.checkMissing(ids);
 });
 
 // ============================================

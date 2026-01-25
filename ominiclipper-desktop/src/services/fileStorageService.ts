@@ -142,6 +142,7 @@ export async function importFile(
     }
 
     // Read file as base64 and save to storage
+    let savedPath = '';
     if (isElectron()) {
       const readResult = await (window as any).electronAPI.readFileAsDataUrl(sourcePath);
       if (!readResult.success) {
@@ -152,6 +153,7 @@ export async function importFile(
       if (!saveResult.success) {
         return { success: false, error: saveResult.error };
       }
+      savedPath = saveResult.path || '';
     }
 
     // Create metadata
@@ -168,7 +170,6 @@ export async function importFile(
       folders: itemData.folderId ? [itemData.folderId] : [],
       color: itemData.color,
       starred: itemData.isStarred || false,
-      url: itemData.url,
       description: itemData.description,
       modificationTime: now,
     };
@@ -181,14 +182,14 @@ export async function importFile(
       id: itemId,
       title: metadata.name,
       type: type,
-      path: saveResult.path || '',
+      path: savedPath,
       fileSize: metadata.size,
       mimeType: getMimeType(fileName),
       tags: metadata.tags,
       folderId: metadata.folders[0],
       color: metadata.color,
       isStarred: metadata.starred,
-      url: metadata.url,
+      isCloud: false,
       description: metadata.description,
       createdAt: new Date(metadata.btime).toISOString(),
       updatedAt: new Date(metadata.mtime).toISOString(),
@@ -198,6 +199,31 @@ export async function importFile(
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
+}
+
+/**
+ * Wrapper to import and immediately index
+ */
+export async function importAndIndexFile(
+  sourcePath: string,
+  itemData: Partial<ResourceItem>
+): Promise<{ success: boolean; item?: ResourceItem; error?: string }> {
+  // 1. Import (Copy file, create metadata)
+  const result = await importFile(sourcePath, itemData);
+
+  if (result.success && result.item) {
+    // 2. Trigger Indexing in background (don't await to keep UI responsive)
+    import('../services/indexingService').then(({ indexResourceItem }) => {
+      // We know result.item is defined here
+      if (result.item) {
+        indexResourceItem(result.item).catch(err =>
+          console.error('[FileStorage] Auto-indexing failed:', err)
+        );
+      }
+    });
+  }
+
+  return result;
 }
 
 /**

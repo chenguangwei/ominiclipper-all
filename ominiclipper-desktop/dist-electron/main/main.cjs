@@ -1304,6 +1304,9 @@ ipcMain.handle("vector:delete", async (event, { id }) => {
 ipcMain.handle("vector:getStats", async () => {
   return await vectorService.getStats();
 });
+ipcMain.handle("vector:checkMissing", async (event, { ids }) => {
+  return await vectorService.checkMissing(ids);
+});
 ipcMain.handle("search:index", async (event, { id, text, metadata }) => {
   return await searchIndexManager.indexDocument(id, text, metadata);
 });

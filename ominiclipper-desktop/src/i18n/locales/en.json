@@ -1,0 +1,73 @@
+{
+    "common": {
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "close": "Close",
+        "confirm": "Confirm",
+        "loading": "Loading...",
+        "search": "Search...",
+        "settings": "Settings",
+        "about": "About",
+        "version": "Version"
+    },
+    "sidebar": {
+        "all": "All Items",
+        "uncategorized": "Uncategorized",
+        "folders": "Folders",
+        "tags": "Tags",
+        "favorites": "Favorites",
+        "trash": "Trash",
+        "new_folder": "New Folder"
+    },
+    "settings": {
+        "title": "Settings",
+        "appearance": "Appearance",
+        "language": "Language",
+        "storage": "Data Storage",
+        "advanced": "Advanced",
+        "ai_config": "AI Configuration",
+        "theme": {
+            "light": "Light",
+            "dark": "Dark",
+            "system": "System"
+        },
+        "storage_location": "Storage Location",
+        "choose_directory": "Choose Directory",
+        "reset": "Reset",
+        "rebuild_index": "Rebuild Index",
+        "provider": "Default Provider",
+        "model": "Embedding Model",
+        "embedding_model": "Embedding Model",
+        "api_key": "API Key",
+        "custom_url": "Custom API URL",
+        "save_changes": "Save Changes",
+        "selectDataStorageDirectory": "Select Data Storage Directory",
+        "desktopAppOnly": "This feature is only available in the desktop app",
+        "model_name_placeholder": "Model Name (e.g. gpt-4)",
+        "confirm_embedding_switch": "Switching embedding model requires re-initializing the vector database. This may take a moment. Continue?",
+        "embedding_switch_success": "Embedding model switched successfully. Please rebuild index if necessary.",
+        "embedding_switch_fail": "Failed to switch model: ",
+        "embedding_note": "Note: Index data is separated by model type.",
+        "custom_api_url": "Custom API URL",
+        "custom_api_url_placeholder": "e.g., http://localhost:11434/v1",
+        "api_key_placeholder": "Enter {{provider}} API Key",
+        "api_key_note": "Your API key is stored locally and never sent to our servers.",
+        "default_location": "Default Location",
+        "custom_storage_desc": "Custom storage directory for imported files",
+        "default_storage_desc": "Default: ",
+        "search_index": "Search Index",
+        "search_index_desc": "Rebuild vector index for AI search",
+        "indexing": "Indexing...",
+        "completed": "Completed",
+        "failed": "Failed",
+        "about_desc": "Version {{version}} - Your personal resource manager"
+    },
+    "auth": {
+        "login": "Login",
+        "register": "Register",
+        "email": "Email",
+        "password": "Password"
+    }
+}

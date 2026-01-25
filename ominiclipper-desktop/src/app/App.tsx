@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -9,6 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 import Icon from '@/components/Icon';
 import Sidebar from '@/components/Sidebar';
 import TopBar from '@/components/TopBar';
+import AIAssistant from '@/components/AIAssistant';
 import ListDetailView from '@/components/ListDetailView';
 import PreviewPane from '@/components/PreviewPane';
 import TableView from '@/components/TableView';
@@ -31,6 +33,7 @@ import { ViewMode, FilterState, ResourceItem, Tag, Folder } from '@/types';
 // Custom Hooks
 import { useAppInit } from '@/hooks/useAppInit';
 import { useSemanticSearch } from '@/hooks/useSemanticSearch';
+import { useDataIntegrity } from '@/hooks/useDataIntegrity';
 import { useSync } from '@/hooks/useSync';
 import { useFiltering } from '@/hooks/useFiltering';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -79,8 +82,11 @@ const App: React.FC = () => {
   const { isStorageReady, currentThemeId, colorMode, customStoragePath, setStoragePath, applyTheme, applyColorMode } = useAppInit(setItems, setTags, setFolders);
 
   // 2. Semantic Search
-  const { isSemanticSearchEnabled, setIsSemanticSearchEnabled, semanticSearchResults, isSemanticSearching } =
+  const { isSemanticSearchEnabled, setIsSemanticSearchEnabled, isHybridSearchEnabled, setIsHybridSearchEnabled, semanticSearchResults, isSemanticSearching } =
     useSemanticSearch(filterState.search);
+
+
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // 3. Sync
   const { isSyncing, syncItems, user } = useSync(items, setItems);
@@ -92,6 +98,10 @@ const App: React.FC = () => {
 
   // 5. Drag & Drop
   const dnd = useDragDrop(setItems, filterState, customStoragePath);
+
+  // 6. Data Integrity (Startup Scan)
+  // Only run when storage is ready and we have items
+  useDataIntegrity(items, isStorageReady);
 
   // --- Derived State ---
   const selectedItem = useMemo(() => items.find(i => i.id === selectedItemId) || null, [selectedItemId, items]);
@@ -121,8 +131,11 @@ const App: React.FC = () => {
 
   // --- Render ---
 
+  // Add translation hook
+  const { t } = useTranslation();
+
   if (!isStorageReady) {
-    return <div className="flex items-center justify-center h-screen bg-gray-50 text-gray-500">Loading library...</div>;
+    return <div className="flex items-center justify-center h-screen bg-gray-50 text-gray-500">{t('common.loading')}</div>;
   }
 
   // Helper to handle confirm close
@@ -157,7 +170,10 @@ const App: React.FC = () => {
           setTags([...storageService.getTags()]);
           setItems([...storageService.getItems()]);
         }}
+        colorMode={colorMode}
       />
+
+      {/* ... rest of App ... */}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-bg-secondary relative">
         <TopBar
@@ -178,6 +194,9 @@ const App: React.FC = () => {
           selectedColorFilter={filterState.color}
           onColorFilterChange={(color) => setFilterState(prev => ({ ...prev, color }))}
           isSemanticSearching={isSemanticSearching}
+          isHybridSearchEnabled={isHybridSearchEnabled}
+          onToggleHybridSearch={() => setIsHybridSearchEnabled(!isHybridSearchEnabled)}
+          onToggleChat={() => setIsChatOpen(!isChatOpen)}
         />
 
         <main className="flex-1 overflow-hidden relative">
@@ -207,7 +226,7 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-text-secondary">
-                  Select an item to view details
+                  {t('common.select_item')}
                 </div>
               )}
             </div>
@@ -237,14 +256,18 @@ const App: React.FC = () => {
           {dnd.isDragOver && (
             <div className="absolute inset-0 bg-primary-500/10 backdrop-blur-sm border-4 border-primary-500/50 z-50 flex items-center justify-center rounded-lg m-4">
               <div className="text-2xl font-bold text-primary-600 bg-white/90 px-8 py-4 rounded-xl shadow-lg">
-                Drop files to import
+                {t('common.drop_files')}
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* Dialogs */}
+
+      {/* 4. Chat Interface */}
+      <AIAssistant isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+
+      {/* 5. Dialogs */}
       {isAuthOpen && (
         <AuthDialog
           isOpen={isAuthOpen}

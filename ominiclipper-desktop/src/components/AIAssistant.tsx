@@ -63,6 +63,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
       const results = await hybridSearchService.search({ query: question, limit: 5 });
       const context = results.map(r => r.text).join('\n\n');
 
+      // Determine provider from settings (or default)
+      // In a real app we'd have a useSettings hook. For now, let's grab from localStorage safely
+      const savedProvider = localStorage.getItem('OMNICLIPPER_DEFAULT_PROVIDER') as any || 'openai';
+
       let fullResponse = '';
 
       // Add placeholder message for streaming
@@ -77,11 +81,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
           fullResponse += token;
           const currentMessages = chatService.getMessages();
           const lastMsg = currentMessages[currentMessages.length - 1];
+          // ... (keep existing update logic)
           if (lastMsg && lastMsg.role === 'assistant') {
             lastMsg.content = fullResponse;
             setMessages([...currentMessages]);
           }
-        }
+        },
+        { provider: savedProvider }
       );
 
       // Update with sources
@@ -118,9 +124,8 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ isOpen, onClose }) => {
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity duration-300 ${
-          isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
         onClick={onClose}
       />
 
@@ -218,11 +223,10 @@ const MessageItem: React.FC<{ message: ChatMessage }> = ({ message }) => {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-        isUser
-          ? 'bg-primary text-white rounded-br-md'
-          : 'bg-surface-tertiary text-content rounded-bl-md border border-[rgb(var(--color-border)/var(--border-opacity))]'
-      }`}>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${isUser
+        ? 'bg-primary text-white rounded-br-md'
+        : 'bg-surface-tertiary text-content rounded-bl-md border border-[rgb(var(--color-border)/var(--border-opacity))]'
+        }`}>
         <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
         {message.sources && message.sources.length > 0 && (
           <div className={`mt-3 pt-3 border-t ${isUser ? 'border-white/10' : 'border-[rgb(var(--color-border)/var(--border-opacity))]'}`}>

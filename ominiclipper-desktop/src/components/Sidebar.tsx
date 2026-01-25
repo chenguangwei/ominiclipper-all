@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Tag, Folder, ColorMode } from '../types';
 import Icon from './Icon';
 import AIAssistant from './AIAssistant';
@@ -42,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDropOnFolder,
   colorMode = 'dark',
 }) => {
+  const { t } = useTranslation();
   void _activeColor;
   void _onSelectColor;
   const isLight = colorMode === 'light';
@@ -209,26 +211,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="w-4"></span>
               <Icon name="inbox" className={`text-[18px] ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">All Items</span>
+              <span className="flex-1">{t('sidebar.all')}</span>
               <span className="text-[10px] opacity-50">{totalItems}</span>
-            </div>
-
-            <div
-              onClick={() => { onSelectFolder('recent'); onSelectTag(null); }}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'recent' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
-            >
-              <span className="w-4"></span>
-              <Icon name="schedule" className={`text-[18px] ${activeFolderId === 'recent' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">Recent</span>
-            </div>
-
-            <div
-              onClick={() => { onSelectFolder('starred'); onSelectTag(null); }}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'starred' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
-            >
-              <span className="w-4"></span>
-              <Icon name="star" className={`text-[18px] ${activeFolderId === 'starred' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">Starred</span>
             </div>
 
             <div
@@ -237,7 +221,16 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="w-4"></span>
               <Icon name="folder_off" className={`text-[18px] ${activeFolderId === 'uncategorized' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">Uncategorized</span>
+              <span className="flex-1">{t('sidebar.uncategorized')}</span>
+            </div>
+
+            <div
+              onClick={() => { onSelectFolder('starred'); onSelectTag(null); }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'starred' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+            >
+              <span className="w-4"></span>
+              <Icon name="star" className={`text-[18px] ${activeFolderId === 'starred' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1">{t('sidebar.favorites')}</span>
             </div>
 
             <div
@@ -246,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="w-4"></span>
               <Icon name="delete" className={`text-[18px] ${activeFolderId === 'trash' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">Trash</span>
+              <span className="flex-1">{t('sidebar.trash')}</span>
             </div>
           </div>
 
@@ -258,7 +251,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-2">
                 <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-folders') ? 'rotate-90' : ''} ${isLight ? '' : 'text-content-secondary'}`} />
-                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>Folders ({folders.length})</h3>
+                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>{t('sidebar.folders')} ({folders.length})</h3>
               </div>
               <Icon
                 name="create_new_folder"
@@ -282,7 +275,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-2">
                 <Icon name="chevron_right" className={`text-[14px] transition-transform ${expandedIds.has('root-tags') ? 'rotate-90' : ''} ${isLight ? '' : 'text-content-secondary'}`} />
-                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>Tags ({tags.length})</h3>
+                <h3 className={`text-[11px] font-medium ${isLight ? 'text-gray-700' : ''}`}>{t('sidebar.tags')} ({tags.length})</h3>
               </div>
               <Icon
                 name="add"
@@ -304,11 +297,10 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* AI Assistant Button */}
           <button
             onClick={() => setShowAIAssistant(true)}
-            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${
-              isLight
-                ? 'hover:bg-gray-100 text-gray-700'
-                : 'hover:bg-white/5 text-slate-300 hover:text-white'
-            }`}
+            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${isLight
+              ? 'hover:bg-gray-100 text-gray-700'
+              : 'hover:bg-white/5 text-slate-300 hover:text-white'
+              }`}
           >
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
               <Icon name="psychology" className="text-[18px] text-primary" />

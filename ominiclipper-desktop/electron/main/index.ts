@@ -1640,6 +1640,10 @@ ipcMain.handle('vector:getStats', async () => {
   return await vectorService.getStats();
 });
 
+ipcMain.handle('vector:checkMissing', async (event, { ids }) => {
+  return await vectorService.checkMissing(ids);
+});
+
 // ============================================
 // Search Index API (BM25 Full-Text Search)
 // ============================================

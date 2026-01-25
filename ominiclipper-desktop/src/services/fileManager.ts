@@ -5,7 +5,7 @@
 
 import { ResourceItem, ResourceType, RecentFile, FileStats } from '../types';
 import * as storageService from './storageService';
-import { importFile, deleteItemFiles } from './fileStorageService';
+import { importAndIndexFile, deleteItemFiles } from './fileStorageService';
 
 // MIME type mappings
 const MIME_TYPE_MAP: Record<string, ResourceType> = {
@@ -594,11 +594,20 @@ export function getUsablePath(item: ResourceItem): string | undefined {
  * @param sourcePath Source file path
  * @param itemData Item metadata
  */
+
+
+// ... (existing code)
+
+/**
+ * Import a file to Eagle-style storage (with Auto Indexing)
+ * @param sourcePath Source file path
+ * @param itemData Item metadata
+ */
 export async function importFileToStorage(
   sourcePath: string,
   itemData: Partial<ResourceItem>
 ): Promise<{ success: boolean; item?: ResourceItem; error?: string }> {
-  return await importFile(sourcePath, itemData);
+  return await importAndIndexFile(sourcePath, itemData);
 }
 
 /**

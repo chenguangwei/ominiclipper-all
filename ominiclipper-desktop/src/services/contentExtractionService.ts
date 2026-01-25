@@ -111,7 +111,6 @@ export const extractDocxContent = async (filePath: string, maxLength = 500): Pro
       docx.renderAsync(arrayBuffer, container, undefined, {
         className: 'docx',
         inWrapper: false,
-        showBorders: false,
       }).then(() => {
         // Extract text from first few paragraphs
         const paragraphs = container.querySelectorAll('p');
@@ -319,4 +318,15 @@ export const processItemWithAutoDescription = async (
   const filePath = getFilePathFromItem(item);
   const snippet = await generateAutoDescription(item.type, filePath, item.title);
   return { ...item, description: snippet };
+};
+
+/**
+ * Extract FULL content from a resource (for indexing)
+ */
+export const extractFullContent = async (
+  type: ResourceType,
+  filePath: string,
+  maxLength = 50000 // Default to a much larger limit
+): Promise<string> => {
+  return await extractContentSnippet(type, filePath, maxLength);
 };

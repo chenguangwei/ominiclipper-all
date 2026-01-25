@@ -359,13 +359,12 @@ MIT License
 
 ---
 
-## 更新日志
 
-### v1.0.0 (2026-01)
+## 更新日志 (Update Log)
 
-- 完成核心架构重构
-- 实现向量搜索服务 (LanceDB)
-- 实现混合搜索 (向量 + BM25)
-- 实现 AI 分类器
-- 实现多视图 UI (列表/网格/表格)
-- 实现文档预览 (PDF/DOCX/图片等)
+### 2026-01-25
+- **自动索引 (Auto Indexing)**: 实现后台自动扫描和索引缺失文件，确保搜索完整性。
+- **启动扫描 (Startup Scan)**: 应用启动时自动检查数据完整性。
+- **混合搜索 (Hybrid Search)**: 结合 Vector 语义搜索和 BM25 关键词搜索，提供更精准结果 `Src: vectorStoreService.ts`。
+- **RAG 智能问答 (AI Assistant)**: 集成 `AIAssistant` 组件，支持基于本地文档的上下文对话 `Src: AIAssistant.tsx`。
+- **UI 优化**: 顶部栏增加混合搜索开关和 AI 助手入口。

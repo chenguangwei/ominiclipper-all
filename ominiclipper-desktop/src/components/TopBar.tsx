@@ -21,6 +21,9 @@ interface TopBarProps {
   selectedColorFilter?: string | null;
   onColorFilterChange?: (color: string | null) => void;
   isSemanticSearching?: boolean;
+  isHybridSearchEnabled?: boolean;
+  onToggleHybridSearch?: () => void;
+  onToggleChat?: () => void;
 }
 
 
@@ -65,6 +68,9 @@ const TopBar: React.FC<TopBarProps> = ({
   selectedColorFilter = null,
   onColorFilterChange,
   isSemanticSearching = false,
+  isHybridSearchEnabled = false,
+  onToggleHybridSearch,
+  onToggleChat,
 }) => {
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showColorDropdown, setShowColorDropdown] = useState(false);
@@ -232,16 +238,31 @@ const TopBar: React.FC<TopBarProps> = ({
               className="h-7 w-full rounded-md border-none bg-surface-secondary pl-8 pr-2 text-sm text-content focus:ring-1 focus:ring-primary/50 placeholder:text-content-secondary outline-none transition-all"
               placeholder="Search resources... (⌘F)"
             />
+          </div>
+          {/* Search options/indicator */}
+          <div className="absolute right-2 flex items-center gap-1">
+            {isSemanticSearching && (
+              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary mr-1" title="Searching..."></div>
+            )}
+            {onToggleHybridSearch && (
+              <button
+                onClick={onToggleHybridSearch}
+                className={`flex items-center justify-center p-1 rounded-md transition-colors ${isHybridSearchEnabled
+                  ? 'bg-primary/20 text-primary'
+                  : 'text-content-secondary hover:text-content hover:bg-surface-tertiary'
+                  }`}
+                title={isHybridSearchEnabled ? "Hybrid Search Active (Vector + Keyword)" : "Switch to Hybrid Search"}
+              >
+                <Icon name="science" className="text-[16px]" />
+              </button>
+            )}
             {searchQuery && (
               <button
                 onClick={() => onSearchChange('')}
-                className="absolute right-2 text-content-secondary hover:text-content"
+                className="text-content-secondary hover:text-content p-1"
               >
                 <Icon name="close" className="text-[16px]" />
               </button>
-            )}
-            {isSemanticSearching && (
-              <div className="absolute right-8 animate-spin rounded-full h-4 w-4 border-b-2 border-primary" title="AI Semantic Search Active"></div>
             )}
           </div>
         </div>
@@ -255,6 +276,15 @@ const TopBar: React.FC<TopBarProps> = ({
           >
             <Icon name="settings" />
           </button>
+          {onToggleChat && (
+            <button
+              onClick={onToggleChat}
+              className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors"
+              title="Chat Assistant"
+            >
+              <Icon name="smart_toy" />
+            </button>
+          )}
           <button
             onClick={onImportExportClick}
             className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-secondary text-content-secondary transition-colors"

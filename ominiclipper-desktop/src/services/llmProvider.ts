@@ -75,6 +75,24 @@ export const LLM_PROVIDERS: LLMProvider[] = [
     supportsStreaming: true
   },
   {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    apiBaseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      'google/gemini-2.0-flash-exp:free',
+      'google/gemini-2.0-flash-thinking-exp:free',
+      'deepseek/deepseek-r1:free',
+      'deepseek/deepseek-r1',
+      'openai/gpt-4o',
+      'anthropic/claude-3.5-sonnet'
+    ],
+    pricingPer1kTokens: {
+      input: 0,
+      output: 0
+    },
+    supportsStreaming: true
+  },
+  {
     id: 'custom',
     name: '自定义 (OpenAI 兼容)',
     apiBaseUrl: '',
@@ -377,18 +395,83 @@ class LLMProviderService {
    */
   async chatStream(
     prompt: string,
-    onToken: (token: string) => void
+    onToken: (token: string) => void,
+    providerId: LLMProviderType = 'openai',
+    model?: string
   ): Promise<string> {
-    // 目前返回简单实现，实际项目中会连接真实 LLM API
-    const response = "这是模拟的流式响应。在实际项目中，这里会调用真实的 LLM API 并实现流式输出。";
+    const provider = this.getProviderById(providerId);
+    if (!provider) throw new Error('Provider not found');
 
-    // 模拟流式输出效果
-    for (let i = 0; i < response.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-      onToken(response[i]);
+    const apiKey = this.getApiKey(providerId);
+    if (!apiKey && providerId !== 'custom') throw new Error('API Key not configured');
+
+    const selectedModel = model || this.getDefaultModel(providerId);
+    const apiBaseUrl = providerId === 'custom'
+      ? localStorage.getItem('OMNICLIPPER_CUSTOM_API_URL') || ''
+      : provider.apiBaseUrl;
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          ...(providerId === 'anthropic' ? {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          } : {})
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          messages: [{ role: 'user', content: prompt }],
+          stream: true,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `HTTP ${response.status}`);
+      }
+
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          if (line.trim() === 'data: [DONE]') continue;
+          if (!line.startsWith('data: ')) continue;
+
+          try {
+            const data = JSON.parse(line.slice(6));
+            const content = data.choices?.[0]?.delta?.content || '';
+            if (content) {
+              fullText += content;
+              onToken(content);
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE line', line);
+          }
+        }
+      }
+      return fullText;
+
+    } catch (error) {
+      console.error('Chat stream error:', error);
+      throw error;
     }
-
-    return response;
   }
 
   /**
@@ -397,9 +480,13 @@ class LLMProviderService {
   async chatWithContext(
     context: string,
     question: string,
-    chatHistory: string,
-    onToken?: (token: string) => void
+    chatHistory: { role: string; content: string }[],
+    onToken?: (token: string) => void,
+    config?: { provider?: LLMProviderType; model?: string }
   ): Promise<string> {
+    const providerId = config?.provider || 'openai'; // Default or from config
+    // In a real app, you might want to load the *active* provider from settings
+
     const systemPrompt = `你是 OmniClipper 知识助手。基于以下资料回答用户问题。
 
 ## 规则
@@ -408,33 +495,76 @@ class LLMProviderService {
 3. 用中文回答，除非用户用英文提问
 4. 回答要简洁，条理清晰
 
-## 格式
-- 使用编号列表呈现多个要点
-- 重要信息加粗强调
-- 引用来源使用 [编号] 标注`;
-
-    const fullPrompt = `${systemPrompt}
-
 ## 资料
-${context}
+${context}`;
 
-## 对话历史
-${chatHistory}
+    // Construct messages array properly
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...chatHistory, // History should be properly formatted {role, content}
+      { role: 'user', content: question }
+    ];
 
-## 问题
-${question}`;
+    // Reuse testConnection-like logic but for stream
+    // Since we refactored chatStream to take a single prompt string in the previous signature,
+    // we need to support messages in chatStream or reimplement fetch here.
+    // Let's reimplement properly to support the 'messages' array which is crucial for history.
 
-    if (onToken) {
-      return this.chatStream(fullPrompt, onToken);
+    const provider = this.getProviderById(providerId);
+    if (!provider) throw new Error('Provider not found');
+    const apiKey = this.getApiKey(providerId);
+    const apiBaseUrl = providerId === 'custom'
+      ? localStorage.getItem('OMNICLIPPER_CUSTOM_API_URL') || ''
+      : provider.apiBaseUrl;
+    const selectedModel = config?.model || this.getDefaultModel(providerId);
+
+    const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        ...(providerId === 'anthropic' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : {})
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: messages,
+        stream: true,
+        temperature: 0.5
+      })
+    });
+
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.body) throw new Error('No body');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') continue;
+          try {
+            const data = JSON.parse(dataStr);
+            const content = data.choices?.[0]?.delta?.content || '';
+            if (content) {
+              fullText += content;
+              onToken?.(content);
+            }
+          } catch { }
+        }
+      }
     }
-
-    // 目前返回简单实现，实际项目中会连接真实 LLM API
-    return `根据提供的资料，关于"${question}"的信息：
-
-这是模拟的 AI 响应。在实际实现中，将调用真实的 LLM 提供商（如 OpenAI、Anthropic 等）的 API 来获取答案。
-
-**当前上下文：**
-${context.slice(0, 200)}...`;
+    return fullText;
   }
 
   /**

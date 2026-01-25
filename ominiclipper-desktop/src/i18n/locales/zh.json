@@ -1,0 +1,73 @@
+{
+    "common": {
+        "save": "保存",
+        "cancel": "取消",
+        "delete": "删除",
+        "edit": "编辑",
+        "close": "关闭",
+        "confirm": "确认",
+        "loading": "加载中...",
+        "search": "搜索...",
+        "settings": "设置",
+        "about": "关于",
+        "version": "版本"
+    },
+    "sidebar": {
+        "all": "全部项目",
+        "uncategorized": "未分类",
+        "folders": "文件夹",
+        "tags": "标签",
+        "favorites": "收藏",
+        "trash": "回收站",
+        "new_folder": "新建文件夹"
+    },
+    "settings": {
+        "title": "设置",
+        "appearance": "外观",
+        "language": "语言",
+        "storage": "数据存储",
+        "advanced": "高级",
+        "ai_config": "AI 配置",
+        "theme": {
+            "light": "浅色",
+            "dark": "深色",
+            "system": "系统"
+        },
+        "storage_location": "存储位置",
+        "choose_directory": "选择目录",
+        "reset": "重置",
+        "rebuild_index": "重建索引",
+        "provider": "默认提供商",
+        "model": "嵌入模型",
+        "embedding_model": "嵌入模型",
+        "api_key": "API 密钥",
+        "custom_url": "自定义 API 地址",
+        "save_changes": "保存更改",
+        "selectDataStorageDirectory": "选择数据存储目录",
+        "desktopAppOnly": "此功能仅在桌面应用中可用",
+        "model_name_placeholder": "模型名称 (如 gpt-4)",
+        "confirm_embedding_switch": "切换嵌入模型需要重新初始化向量数据库。这可能需要一点时间。继续吗？",
+        "embedding_switch_success": "嵌入模型切换成功。如有必要，请重建索引。",
+        "embedding_switch_fail": "切换模型失败：",
+        "embedding_note": "注意：不同模型的索引数据是分开存储的。",
+        "custom_api_url": "自定义 API 地址",
+        "custom_api_url_placeholder": "例如：http://localhost:11434/v1",
+        "api_key_placeholder": "请输入 {{provider}} API 密钥",
+        "api_key_note": "您的 API 密钥存储在本地，绝不会发送到我们的服务器。",
+        "default_location": "默认位置",
+        "custom_storage_desc": "导入文件的自定义存储目录",
+        "default_storage_desc": "默认：",
+        "search_index": "搜索索引",
+        "search_index_desc": "重建 AI 搜索的向量索引",
+        "indexing": "索引中...",
+        "completed": "完成",
+        "failed": "失败",
+        "about_desc": "版本 {{version}} - 您的个人资源管理器"
+    },
+    "auth": {
+        "login": "登录",
+        "register": "注册",
+        "email": "邮箱",
+        "password": "密码"
+    }
+}

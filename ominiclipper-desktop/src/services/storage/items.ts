@@ -36,19 +36,12 @@ export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'upd
 
     if (storageState.isElectronEnvironment) {
         await itemMetaService.saveItemMetadata(newItem);
-        // Semantic search indexing (fire and forget)
-        try {
-            await vectorStoreService.indexDocument({
-                id: newItem.id,
-                text: newItem.contentSnippet || newItem.embeddedData || '',
-                metadata: {
-                    title: newItem.title,
-                    type: newItem.type,
-                    tags: newItem.tags,
-                    createdAt: newItem.createdAt
-                }
-            });
-        } catch (e) { console.error('Vector indexing failed', e); }
+        // Trigger full content indexing (background)
+        import('../indexingService').then(({ indexResourceItem }) => {
+            indexResourceItem(newItem).catch(err =>
+                console.error('[Storage] Auto-indexing failed:', err)
+            );
+        });
     }
 
     return newItem;
@@ -64,17 +57,13 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
 
     if (storageState.isElectronEnvironment) {
         await itemMetaService.saveItemMetadata(items[index]);
-        if (updates.title || updates.contentSnippet || updates.tags) {
-            vectorStoreService.indexDocument({
-                id: items[index].id,
-                text: items[index].contentSnippet || items[index].embeddedData || '',
-                metadata: {
-                    title: items[index].title,
-                    type: items[index].type,
-                    tags: items[index].tags,
-                    createdAt: items[index].createdAt
-                }
-            }).catch(console.error);
+        if (updates.title || updates.contentSnippet || updates.tags || updates.path) {
+            // Trigger re-indexing if content-related fields changed
+            import('../indexingService').then(({ indexResourceItem }) => {
+                indexResourceItem(items[index]).catch(err =>
+                    console.error('[Storage] Re-indexing failed:', err)
+                );
+            });
         }
     }
     return items[index];

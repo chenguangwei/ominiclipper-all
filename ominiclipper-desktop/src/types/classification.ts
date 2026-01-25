@@ -93,7 +93,7 @@ export interface AIClassifierConfig {
 }
 
 // LLM 提供商类型
-export type LLMProviderType = 'openai' | 'anthropic' | 'deepseek' | 'siliconflow' | 'custom';
+export type LLMProviderType = 'openai' | 'anthropic' | 'deepseek' | 'siliconflow' | 'openrouter' | 'custom';
 
 // LLM 提供商配置
 export interface LLMProvider {

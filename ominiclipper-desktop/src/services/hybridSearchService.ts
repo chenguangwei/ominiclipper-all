@@ -2,20 +2,7 @@
 
 import { SearchResult } from '../types/chat';
 
-// Extend window for Electron API
-declare global {
-  interface Window {
-    electronAPI?: {
-      vectorAPI?: {
-        search: (query: string, limit: number) => Promise<VectorSearchResult[]>;
-        initialize: () => Promise<{ success: boolean; error?: string }>;
-        index: (id: string, text: string, metadata: any) => Promise<{ success: boolean }>;
-        delete: (id: string) => Promise<{ success: boolean }>;
-        getStats: () => Promise<{ totalDocs: number; lastUpdated: string; modelLoaded: boolean; dbPath: string }>;
-      };
-    };
-  }
-}
+
 
 interface VectorSearchResult {
   id: string;

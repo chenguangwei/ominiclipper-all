@@ -232,6 +232,9 @@ try {
 
             // Get vector store statistics
             getStats: () => ipcRenderer.invoke('vector:getStats'),
+
+            // Check for missing indexes
+            checkMissing: (ids) => ipcRenderer.invoke('vector:checkMissing', { ids }),
         },
 
         // ============================================
