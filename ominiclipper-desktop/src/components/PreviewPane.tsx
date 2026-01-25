@@ -20,6 +20,7 @@ interface PreviewPaneProps {
   isGeneratingSummary?: boolean;
   onOpenDocument?: (item: ResourceItem) => void;
   colorMode?: ColorMode;
+  highlightText?: string | null;
   // Inline editing props
   availableTags?: { id: string; name: string; color?: string; count?: number }[];
   onRemoveTag?: (itemId: string, tagId: string) => void;
@@ -44,15 +45,22 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   onAddTag,
   onCreateTag,
   onChangeType,
+  highlightText,
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'preview'>('details');
   const isLight = colorMode === 'light';
 
+  // Automatically switch to preview tab when highlightText is provided (Deep Linking)
+  React.useEffect(() => {
+    if (highlightText) {
+      setActiveTab('preview');
+    }
+  }, [highlightText]);
+
   if (!item) {
     return (
-      <div className={`flex-1 flex items-center justify-center flex-col gap-2 select-none ${
-        isLight ? 'bg-gray-50 text-gray-400' : 'bg-surface-secondary text-content-secondary'
-      }`}>
+      <div className={`flex-1 flex items-center justify-center flex-col gap-2 select-none ${isLight ? 'bg-gray-50 text-gray-400' : 'bg-surface-secondary text-content-secondary'
+        }`}>
         <Icon name="description" className="text-[64px] opacity-20" />
         <span className="text-sm font-medium opacity-50">No item selected</span>
       </div>
@@ -77,17 +85,15 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       {/* Tabs */}
       <div className={`flex border-b ${isLight ? 'border-gray-200 bg-gray-50' : 'border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-tertiary/50'}`}>
         <button
-          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'details' ? tabActiveClass : tabInactiveClass
-          }`}
+          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'details' ? tabActiveClass : tabInactiveClass
+            }`}
           onClick={() => setActiveTab('details')}
         >
           Details
         </button>
         <button
-          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 ${
-            activeTab === 'preview' ? tabActiveClass : tabInactiveClass
-          }`}
+          className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'preview' ? tabActiveClass : tabInactiveClass
+            }`}
           onClick={() => setActiveTab('preview')}
         >
           Preview
@@ -118,6 +124,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
             activeTab={activeTab}
             onOpenDocument={onOpenDocument}
             colorMode={colorMode}
+            highlightText={highlightText}
           />
         )}
       </div>

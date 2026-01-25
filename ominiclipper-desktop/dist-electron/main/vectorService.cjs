@@ -285,8 +285,9 @@ async function indexDocument(docId, text, metadata) {
  * @param {string} query - Search query
  * @param {number} limit - Max results (per document)
  * @param {number} threshold - Min similarity threshold (0-1, lower distance is better)
+ * @param {boolean} groupByDoc - If true, return best chunk per document. If false, return all matching chunks.
  */
-async function search(query, limit = 5, threshold = 0.5) {
+async function search(query, limit = 5, threshold = 0.8, groupByDoc = true) {
   if (!isInitialized || !table) {
     console.log('[VectorService] Search skipped: not initialized or no data');
     return [];
@@ -303,6 +304,27 @@ async function search(query, limit = 5, threshold = 0.5) {
       .toArray();
 
     console.log('[VectorService] Search rawResults type:', typeof rawResults, 'value:', rawResults);
+
+    // Optimization: If not grouping by doc, we can return directly (after filtering)
+    if (!groupByDoc) {
+      const filteredResults = rawResults.filter(r => r._distance <= threshold);
+      console.log(`[VectorService] Raw results (no grouping): ${filteredResults.length} chunks`);
+
+      return filteredResults.slice(0, limit).map(r => ({
+        id: r.doc_id, // For RAG, we might want doc_id as main ID but need chunk context. 
+        // Actually, let's keep consistent interface: id = doc_id
+        chunk_id: r.id,
+        text: r.text,
+        score: r._distance,
+        chunk_index: r.chunk_index,
+        metadata: {
+          title: r.title,
+          type: r.type,
+          tags: JSON.parse(r.tags || '[]'),
+          createdAt: r.createdAt,
+        },
+      }));
+    }
 
     // Aggregate results by doc_id, keeping best chunk per document
     const docMap = new Map();
@@ -339,7 +361,7 @@ async function search(query, limit = 5, threshold = 0.5) {
         .sort((a, b) => a.score - b.score)
         .slice(0, limit);
 
-      console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks (threshold:', threshold, ')');
+      console.log('[VectorService] Search found', results.length, 'documents_chunks from', rawResults.length, 'total_chunks (threshold:', threshold, ')');
       return results;
     } else {
       console.error('[VectorService] Search results not iterable:', typeof rawResults, rawResults);

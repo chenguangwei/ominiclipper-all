@@ -158,8 +158,9 @@ async function deleteDocument(docId) {
  * Search documents using BM25 full-text search
  * @param {string} query - Search query
  * @param {number} limit - Max results (per document)
+ * @param {boolean} groupByDoc - Unused for BM25 (always per-doc currently), keeping interface compatible
  */
-async function search(query, limit = 5) {
+async function search(query, limit = 5, groupByDoc = true) {
   if (!db) {
     console.log('[SearchIndex] Search skipped: not initialized');
     return [];
@@ -187,6 +188,19 @@ async function search(query, limit = 5) {
     `);
 
     const rawResults = rawStmt.all(searchQuery, limit * 3);
+
+    // Optimization: If NOT grouping by doc, return raw chunks directly
+    if (!groupByDoc) {
+      console.log(`[SearchIndex] Raw results (no grouping): ${rawResults.length} chunks`);
+      return rawResults.slice(0, limit).map(r => ({
+        id: r.doc_id, // Keep consistent with vector service (id=docId) but logically it's a chunk match
+        chunk_id: r.id,
+        title: r.title || 'Untitled',
+        text: r.text || '',
+        type: r.type || 'document',
+        score: Math.max(0, 1 - (r.score || 0) / 100), // Normalize score roughly
+      }));
+    }
 
     // Aggregate results by doc_id, keeping best chunk per document
     const docMap = new Map();

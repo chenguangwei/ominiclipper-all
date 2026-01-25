@@ -99,8 +99,8 @@ const WordRenderer: React.FC<WordRendererProps> = ({
       >
         {/* Word content will be rendered here by docx-preview */}
       </div>
-      {!loading && shouldShowView && onOpenDocument && (
-        <div className={`flex items-center justify-center gap-4 mt-4 py-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+      {onOpenDocument && (
+        <div className={`flex items-center justify-center gap-4 py-3 shrink-0 border-t ${isLight ? 'bg-gray-50 border-gray-200' : 'bg-surface-tertiary border-gray-700'}`}>
           <button
             onClick={() => onOpenDocument(item)}
             className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}

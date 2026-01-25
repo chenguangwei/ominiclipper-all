@@ -25,14 +25,24 @@ declare global {
             // Browser extension
             syncFromBrowserExtension: (item: any) => Promise<number>;
 
-            // Storage API
-            storageAPI?: {
+            // Storage API (Legacy/General)
+            storageAPI: {
                 getDataPath: () => Promise<string>;
                 readLibrary: () => Promise<any>;
                 writeLibrary: (data: any) => Promise<{ success: boolean; error?: string }>;
                 readSettings: () => Promise<any>;
                 writeSettings: (data: any) => Promise<{ success: boolean; error?: string }>;
                 migrate: (legacyData: any) => Promise<{ success: boolean; error?: string }>;
+            };
+
+            // Item API (Eagle-style logic)
+            itemAPI: {
+                getItemsPath: () => Promise<string>;
+                saveItemMetadata: (itemId: string, metadata: any) => Promise<{ success: boolean; path?: string; error?: string }>;
+                readItemMetadata: (itemId: string) => Promise<any>;
+                deleteItemMetadata: (itemId: string) => Promise<{ success: boolean; error?: string }>;
+                saveItemsIndex: (index: any) => Promise<{ success: boolean; error?: string }>;
+                readItemsIndex: () => Promise<any>;
             };
 
             // File Storage API
@@ -66,7 +76,7 @@ declare global {
                 index: (id: string, text: string, metadata: any) => Promise<{ success: boolean; error?: string }>;
                 delete: (id: string) => Promise<{ success: boolean; error?: string }>;
                 bm25Search: (query: string, limit: number) => Promise<any[]>;
-                hybridSearch: (query: string, limit: number, vectorWeight: number, bm25Weight: number) => Promise<any[]>;
+                hybridSearch: (query: string, limit: number, vectorWeight: number, bm25Weight: number, groupByDoc?: boolean) => Promise<any[]>;
                 getStats: () => Promise<any>;
             };
         };

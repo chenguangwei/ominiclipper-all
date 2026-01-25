@@ -214,7 +214,8 @@ class VectorStoreService {
     query: string,
     limit = 10,
     vectorWeight = 0.7,
-    bm25Weight = 0.3
+    bm25Weight = 0.3,
+    groupByDoc = true
   ): Promise<VectorSearchResult[]> {
     if (!isElectron || !window.electronAPI?.searchAPI) {
       console.warn('[VectorStore] Hybrid search unavailable: not in Electron');
@@ -222,12 +223,13 @@ class VectorStoreService {
     }
 
     try {
-      console.log('[VectorStore] Hybrid search for:', query);
+      console.log('[VectorStore] Hybrid search for:', query, 'groupByDoc:', groupByDoc);
       const results = await window.electronAPI.searchAPI.hybridSearch(
         query,
         limit,
         vectorWeight,
-        bm25Weight
+        bm25Weight,
+        groupByDoc
       );
       console.log('[VectorStore] Hybrid results:', results?.length || 0);
       return results || [];

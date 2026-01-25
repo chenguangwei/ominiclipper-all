@@ -7,8 +7,6 @@ import Icon from '../../Icon';
 // Configure PDF.js worker
 // In dev, the vite plugin serves it at /pdf.worker.min.mjs
 // In prod, it is copied to dist/pdf.worker.min.mjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-
 interface PdfRendererProps {
   item: ResourceItem;
   content: ArrayBuffer | null;
@@ -28,6 +26,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
 }) => {
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const isLight = colorMode === 'light';
+  const [renderError, setRenderError] = React.useState<string | null>(null);
 
   useEffect(() => {
     if (!content || loading || error) {
@@ -35,6 +34,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
     }
 
     let isMounted = true;
+    setRenderError(null);
 
     const renderPDF = async () => {
       // Wait for container to be ready
@@ -102,6 +102,7 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
 
       } catch (err: any) {
         console.error('PDF preview error:', err);
+        if (isMounted) setRenderError('Failed to render PDF: ' + (err.message || 'Unknown error'));
       }
     };
 
@@ -131,12 +132,18 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
         className={`flex-1 overflow-y-auto p-4 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'} ${loading ? 'hidden' : ''}`}
         style={{ minHeight: '400px' }}
       >
-        {/* PDF pages rendered here */}
+        {renderError && (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <Icon name="error" className="text-red-400 text-[48px] mb-2" />
+            <p className={isLight ? 'text-gray-600' : 'text-gray-300'}>{renderError}</p>
+          </div>
+        )}
       </div>
 
       {/* Open in Viewer button (optional footer) */}
-      {!loading && shouldShowView && onOpenDocument && (
-        <div className={`flex items-center justify-center gap-4 py-3 shrink-0 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+      {/* Open in Viewer button (optional footer) */}
+      {onOpenDocument && (
+        <div className={`flex items-center justify-center gap-4 py-3 shrink-0 border-t ${isLight ? 'bg-gray-50 border-gray-200' : 'bg-surface-tertiary border-gray-700'}`}>
           <button
             onClick={() => onOpenDocument(item)}
             className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}

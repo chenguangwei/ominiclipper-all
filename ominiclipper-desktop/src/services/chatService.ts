@@ -42,15 +42,17 @@ export class ChatService {
   async sendMessage(query: string, history: ChatMessage[] = []): Promise<ChatResponse> {
     // 1. Retrieve context
     console.log('[ChatService] Retrieving context for:', query);
-    const results = await vectorStoreService.hybridSearch(query, 5);
+    // Use groupByDoc=false to get multiple relevant chunks per document for RAG context
+    const results = await vectorStoreService.hybridSearch(query, 10, 0.7, 0.3, false);
 
     // Format context
+    // For non-grouped results, we might have multiple chunks from same doc.
     const contextText = results.map(r => `[${r.metadata.title}]: ${r.text}`).join('\n\n');
     const sources = results.map(r => ({
-      id: r.id,
+      id: r.id, // This is doc_id
       title: r.metadata.title,
       type: r.metadata.type,
-      text: r.text,
+      text: r.text, // This is specific chunk text
       score: r.score
     }));
 

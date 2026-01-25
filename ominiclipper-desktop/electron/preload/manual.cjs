@@ -251,8 +251,8 @@ try {
             bm25Search: (query, limit) => ipcRenderer.invoke('search:bm25', { query, limit }),
 
             // Hybrid search (Vector + BM25 with RRF)
-            hybridSearch: (query, limit, vectorWeight, bm25Weight) =>
-                ipcRenderer.invoke('search:hybrid', { query, limit, vectorWeight, bm25Weight }),
+            hybridSearch: (query, limit, vectorWeight, bm25Weight, groupByDoc) =>
+                ipcRenderer.invoke('search:hybrid', { query, limit, vectorWeight, bm25Weight, groupByDoc }),
 
             // Get search index statistics
             getStats: () => ipcRenderer.invoke('search:getStats'),

@@ -1685,13 +1685,13 @@ ipcMain.handle('search:getStats', async () => {
 // Hybrid Search API (Vector + BM25 with RRF)
 // ============================================
 
-ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight: paramVectorWeight, bm25Weight: paramBM25Weight }) => {
-  console.log('[HybridSearch] Query:', query, 'limit:', limit);
+ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight: paramVectorWeight, bm25Weight: paramBM25Weight, groupByDoc = true }) => {
+  console.log('[HybridSearch] Query:', query, 'limit:', limit, 'groupByDoc:', groupByDoc);
 
   // Default weights
   let vectorWeight = paramVectorWeight !== undefined ? paramVectorWeight : 0.7;
   let bm25Weight = paramBM25Weight !== undefined ? paramBM25Weight : 0.3;
-  let searchThreshold = 0.5; // Default threshold
+  let searchThreshold = 0.8; // Default threshold
 
   try {
     // Read settings.json to override parameters if not provided in arguments (or to provide system-level defaults)
@@ -1725,13 +1725,46 @@ ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight:
 
     // Run both searches in parallel
     const [vectorResults, bm25Results] = await Promise.all([
-      // Pass threshold to vector search
-      vectorService.search(query, limit * 2, searchThreshold),
-      searchIndexManager.search(query, limit * 2)
+      // Pass threshold and groupByDoc to vector search
+      vectorService.search(query, limit * 2, searchThreshold, groupByDoc),
+      // Pass groupByDoc to bm25 search
+      searchIndexManager.search(query, limit * 2, groupByDoc)
     ]);
 
     console.log('[HybridSearch] Vector results:', vectorResults?.length || 0);
     console.log('[HybridSearch] BM25 results:', bm25Results?.length || 0);
+
+    // If NOT grouping by doc, we return separate chunks (simplified fusion)
+    if (!groupByDoc) {
+      const allChunks = [];
+
+      // Vector: score = distance. Convert to similarity (1-dist) * weight
+      vectorResults.forEach(r => {
+        // Normalize vector score if not already normalized. 
+        // vectorService returns "distance" as "score".
+        // We assume < 1.0 is good.
+        let sim = 1 - r.score;
+        if (sim < 0) sim = 0;
+
+        allChunks.push({
+          ...r,
+          score: sim * vectorWeight,
+          source: 'vector'
+        });
+      });
+
+      // BM25: score = normalized score * weight
+      bm25Results.forEach(r => {
+        allChunks.push({
+          ...r,
+          score: r.score * bm25Weight,
+          source: 'bm25'
+        });
+      });
+
+      // Sort descending by combined score
+      return allChunks.sort((a, b) => b.score - a.score).slice(0, limit);
+    }
 
     // Use Reciprocal Rank Fusion (RRF) to combine results
     const k = 60; // RRF constant

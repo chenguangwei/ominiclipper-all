@@ -14,6 +14,7 @@ interface ResourcePreviewProps {
   activeTab: 'details' | 'preview';
   onOpenDocument?: (item: ResourceItem) => void;
   colorMode?: ColorMode;
+  highlightText?: string | null;
 }
 
 const ResourcePreview: React.FC<ResourcePreviewProps> = ({
@@ -21,6 +22,7 @@ const ResourcePreview: React.FC<ResourcePreviewProps> = ({
   activeTab,
   onOpenDocument,
   colorMode = 'dark',
+  highlightText,
 }) => {
   const isLight = colorMode === 'light';
   const effectiveType = getEffectiveType(item);
@@ -201,7 +203,7 @@ const ResourcePreview: React.FC<ResourcePreviewProps> = ({
   };
 
   return (
-    <div className="p-6 h-full flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Loading State - for types that don't have their own loading UI */}
       {loading && effectiveType !== ResourceType.WORD && effectiveType !== ResourceType.PDF && (
         <div className="flex-1 flex items-center justify-center">

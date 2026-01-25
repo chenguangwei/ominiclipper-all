@@ -1333,11 +1333,11 @@ ipcMain.handle("search:bm25", async (event, { query, limit }) => {
 ipcMain.handle("search:getStats", async () => {
   return await searchIndexManager.getStats();
 });
-ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight: paramVectorWeight, bm25Weight: paramBM25Weight }) => {
-  console.log("[HybridSearch] Query:", query, "limit:", limit);
+ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight: paramVectorWeight, bm25Weight: paramBM25Weight, groupByDoc = true }) => {
+  console.log("[HybridSearch] Query:", query, "limit:", limit, "groupByDoc:", groupByDoc);
   let vectorWeight = paramVectorWeight !== void 0 ? paramVectorWeight : 0.7;
   let bm25Weight = paramBM25Weight !== void 0 ? paramBM25Weight : 0.3;
-  let searchThreshold = 0.5;
+  let searchThreshold = 0.8;
   try {
     const userDataPath = app.getPath("userData");
     const settingsPath = path.join(userDataPath, "OmniCollector", "data", "settings.json");
@@ -1360,12 +1360,33 @@ ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight:
       }
     }
     const [vectorResults, bm25Results] = await Promise.all([
-      // Pass threshold to vector search
-      vectorService.search(query, limit * 2, searchThreshold),
-      searchIndexManager.search(query, limit * 2)
+      // Pass threshold and groupByDoc to vector search
+      vectorService.search(query, limit * 2, searchThreshold, groupByDoc),
+      // Pass groupByDoc to bm25 search
+      searchIndexManager.search(query, limit * 2, groupByDoc)
     ]);
     console.log("[HybridSearch] Vector results:", (vectorResults == null ? void 0 : vectorResults.length) || 0);
     console.log("[HybridSearch] BM25 results:", (bm25Results == null ? void 0 : bm25Results.length) || 0);
+    if (!groupByDoc) {
+      const allChunks = [];
+      vectorResults.forEach((r) => {
+        let sim = 1 - r.score;
+        if (sim < 0) sim = 0;
+        allChunks.push({
+          ...r,
+          score: sim * vectorWeight,
+          source: "vector"
+        });
+      });
+      bm25Results.forEach((r) => {
+        allChunks.push({
+          ...r,
+          score: r.score * bm25Weight,
+          source: "bm25"
+        });
+      });
+      return allChunks.sort((a, b) => b.score - a.score).slice(0, limit);
+    }
     const k = 60;
     const scoreMap = /* @__PURE__ */ new Map();
     if (Array.isArray(vectorResults)) {

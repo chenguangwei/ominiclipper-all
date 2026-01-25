@@ -123,11 +123,36 @@ const App: React.FC = () => {
     });
   };
 
-  // 6. Keyboard Shortcuts
-  useKeyboardShortcuts(
-    selectedItemId, setSelectedItemId, filteredItems, handleDeleteResource,
-    setIsCreateResourceOpen, setIsCreateFolderOpen, setIsCreateTagOpen, setIsImportExportOpen, setIsAuthOpen
-  );
+  // 7. Navigation & Highlighting
+  const [highlightText, setHighlightText] = useState<string | null>(null);
+
+  const handleNavigateToItem = (itemId: string, text?: string) => {
+    console.log('[App] handleNavigateToItem:', itemId, 'highlight:', text ? text.substring(0, 20) + '...' : 'none');
+
+    // Check if item exists
+    const itemExists = items.find(i => i.id === itemId);
+    console.log('[App] Item exists:', !!itemExists);
+
+    // 1. Select the item
+    setSelectedItemId(itemId);
+
+    // 2. Set highlight text if provided
+    if (text) {
+      setHighlightText(text);
+      // Optional: clear highlight after some time? Keeping it persistent for now until new selection
+    } else {
+      setHighlightText(null);
+    }
+
+    // 3. Ensure we are in a view that shows the preview pane (List Detail)
+    if (viewMode !== ViewMode.LIST_DETAIL) {
+      setViewMode(ViewMode.LIST_DETAIL);
+    }
+
+    // 4. Close chat if needed, or keep open? 
+    // Keeping it open is better for context, but might cover the preview on small screens.
+    // Let's keep it open.
+  };
 
   // --- Render ---
 
@@ -205,7 +230,11 @@ const App: React.FC = () => {
               <ListDetailView
                 items={filteredItems}
                 selectedId={selectedItemId}
-                onSelect={setSelectedItemId}
+                onSelect={(id) => {
+                  setSelectedItemId(id);
+                  // Clear highlight on manual selection change
+                  setHighlightText(null);
+                }}
                 getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
                 sortType={sortType}
                 onSortChange={setSortType}
@@ -222,6 +251,8 @@ const App: React.FC = () => {
                     onDelete={() => handleDeleteResource(selectedItem.id)}
                     getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
                     onOpenDocument={setDocumentViewerItem}
+                    // Pass highlight text
+                    highlightText={highlightText}
                   />
                 </div>
               ) : (
@@ -265,7 +296,14 @@ const App: React.FC = () => {
 
 
       {/* 4. Chat Interface */}
-      <AIAssistant isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <AIAssistant
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        onNavigateToItem={handleNavigateToItem}
+        items={items}
+        colorMode={colorMode}
+        onViewItem={setDocumentViewerItem}
+      />
 
       {/* 5. Dialogs */}
       {isAuthOpen && (
