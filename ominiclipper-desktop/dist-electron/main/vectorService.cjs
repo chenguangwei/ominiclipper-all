@@ -12,6 +12,8 @@ const fs = require('fs');
 const arrow = require('apache-arrow');
 const { splitIntoChunks } = require('./textChunker.cjs');
 
+const { getModelConfig, DEFAULT_MODEL_ID } = require('./embeddingModels.cjs');
+
 // Dynamic imports for ES modules
 let pipeline = null;
 let env = null;
@@ -25,11 +27,8 @@ let isInitializing = false;
 let isInitialized = false;
 let dbPath = null;
 let modelsPath = null;
-
-// Model configuration
-const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
-const VECTOR_DIM = 384;
-const TABLE_NAME = 'documents';
+// Track current model
+let currentModelConfig = null;
 
 /**
  * Load ES modules dynamically
@@ -48,9 +47,11 @@ async function loadModules() {
 /**
  * Initialize the vector service
  * @param {string} userDataPath - Electron app.getPath('userData')
+ * @param {string} modelId - ID of the embedding model to use
  */
-async function initialize(userDataPath) {
-  if (isInitialized) {
+async function initialize(userDataPath, modelId = DEFAULT_MODEL_ID) {
+  // If already initialized with valid table and same model, return
+  if (isInitialized && currentModelConfig && currentModelConfig.id === modelId) {
     return { success: true };
   }
 
@@ -59,15 +60,23 @@ async function initialize(userDataPath) {
     while (isInitializing) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    return { success: isInitialized };
+    // Check if the result matches what we wanted
+    if (currentModelConfig && currentModelConfig.id === modelId) {
+      return { success: isInitialized };
+    }
+    // If different model initialized, we proceed to re-initialize below
   }
 
   isInitializing = true;
-  console.log('[VectorService] Initializing...');
+  console.log(`[VectorService] Initializing with model: ${modelId}...`);
 
   try {
     // Load ES modules
     await loadModules();
+
+    // Get model configuration
+    const config = getModelConfig(modelId);
+    currentModelConfig = config;
 
     // Set up paths
     const basePath = path.join(userDataPath, 'OmniCollector');
@@ -88,33 +97,41 @@ async function initialize(userDataPath) {
     env.allowLocalModels = true;
     env.allowRemoteModels = false; // Disable network fetching
 
-    console.log('[VectorService] Loading embedding model:', MODEL_NAME);
+    console.log('[VectorService] Loading embedding model:', config.name);
     console.log('[VectorService] Models cache:', modelsPath);
 
     // Check if local model exists
-    const localModelDir = path.join(modelsPath, 'Xenova', 'all-MiniLM-L6-v2');
-    const configPath = path.join(localModelDir, 'config.json');
-    console.log('[VectorService] Local model path:', localModelDir);
-    console.log('[VectorService] Model exists locally:', fs.existsSync(configPath));
+    // Note: transformers.js stores 'Xenova/model-name' as 'models--Xenova--model-name' usually in cache,
+    // or 'Xenova/model-name' in localModelPath if downloaded manually.
+    // Let's rely on standard check or simple directory presence.
+    // Xenova/bge-m3 -> Xenova/bge-m3
+    const modelParts = config.name.split('/');
+    const localModelDir = path.join(modelsPath, ...modelParts);
+    const isModelPresent = fs.existsSync(path.join(localModelDir, 'config.json')) ||
+      fs.existsSync(path.join(modelsPath, 'models--' + modelParts.join('--'))); // HF cache style
 
-    if (!fs.existsSync(configPath)) {
-      console.warn('[VectorService] Local model not found. Please download the model first.');
-      console.warn('[VectorService] Expected path:', localModelDir);
-      // Allow remote fetch as fallback
+    console.log('[VectorService] Checking model path (estimated):', localModelDir);
+
+    // We allow remote if not found locally
+    if (!isModelPresent) {
+      console.warn(`[VectorService] ${config.name} not found locally. Enabling remote download.`);
       env.allowRemoteModels = true;
     }
 
     // Load embedding model with retry mechanism
-    console.log('[VectorService] Attempting to load embedding model:', MODEL_NAME);
+    console.log('[VectorService] Attempting to load embedding model:', config.name);
     let modelLoadAttempts = 0;
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 2000;
 
+    // Reset embedder for new model
+    embedder = null;
+
     while (modelLoadAttempts < MAX_RETRIES) {
       try {
-        embedder = await pipeline('feature-extraction', MODEL_NAME, {
-          quantized: true, // Use quantized model for smaller size
-          timeout: 30000, // Increase timeout to 30 seconds
+        embedder = await pipeline('feature-extraction', config.name, {
+          quantized: config.quantized,
+          timeout: 60000, // Increase timeout for larger models
         });
         console.log('[VectorService] Model loaded successfully');
         break; // Success, exit loop
@@ -136,36 +153,26 @@ async function initialize(userDataPath) {
     console.log('[VectorService] Connecting to LanceDB:', dbPath);
     db = await lancedb.connect(dbPath);
 
-    // Check if table exists and has correct schema
+    // Open/Create Table for this model
+    const tableName = config.tableName;
+    console.log('[VectorService] Using table:', tableName);
+
     const tables = await db.tableNames();
-    if (tables.includes(TABLE_NAME)) {
-      table = await db.openTable(TABLE_NAME);
+    if (tables.includes(tableName)) {
+      table = await db.openTable(tableName);
       const count = await table.countRows();
       console.log('[VectorService] Opened existing table with', count, 'documents');
 
-      // Check if schema has doc_id field, if not, recreate table
-      try {
-        const schema = await table.schema();
-        const fields = schema.fields.map(f => f.name);
-        if (!fields.includes('doc_id')) {
-          console.log('[VectorService] Old schema detected without doc_id, recreating table...');
-          await db.dropTable(TABLE_NAME);
-          table = null;
-        }
-      } catch (e) {
-        console.log('[VectorService] Could not check schema, recreating table...');
-        await db.dropTable(TABLE_NAME);
-        table = null;
-      }
+      // Basic schema check could go here if needed
     } else {
-      console.log('[VectorService] Table will be created on first insert');
+      console.log('[VectorService] Table does not exist, will create on first insert');
       table = null;
     }
 
     isInitialized = true;
     isInitializing = false;
 
-    console.log('[VectorService] Initialization complete');
+    console.log('[VectorService] Initialization complete with model:', config.id);
     return { success: true };
   } catch (error) {
     console.error('[VectorService] Initialization failed:', error);
@@ -244,20 +251,23 @@ async function indexDocument(docId, text, metadata) {
     }
 
     if (!table) {
-      // Create table with explicit schema using Apache Arrow
-      console.log('[VectorService] Creating table with explicit schema');
+      console.log('[VectorService] Creating table with explicit schema for model:', currentModelConfig.name);
+
+      const vectorDim = currentModelConfig.dim;
+      const tableName = currentModelConfig.tableName;
+
       const schema = new arrow.Schema([
         new arrow.Field('id', new arrow.Utf8()),
         new arrow.Field('doc_id', new arrow.Utf8()),
         new arrow.Field('text', new arrow.Utf8()),
         new arrow.Field('chunk_index', new arrow.Int32()),
-        new arrow.Field('vector', new arrow.FixedSizeList(VECTOR_DIM, new arrow.Field('item', new arrow.Float32()))),
+        new arrow.Field('vector', new arrow.FixedSizeList(vectorDim, new arrow.Field('item', new arrow.Float32()))),
         new arrow.Field('title', new arrow.Utf8(), true),
         new arrow.Field('type', new arrow.Utf8(), true),
         new arrow.Field('tags', new arrow.Utf8(), true),
         new arrow.Field('createdAt', new arrow.Utf8(), true),
       ]);
-      table = await db.createTable(TABLE_NAME, records, { schema });
+      table = await db.createTable(tableName, records, { schema });
     } else {
       await table.add(records);
     }
@@ -377,6 +387,38 @@ async function getStats() {
 /**
  * Check if service is initialized
  */
+/**
+ * Check which IDs are missing from the index
+ * @param {string[]} ids - List of IDs to check
+ * @returns {Promise<string[]>} - List of missing IDs
+ */
+async function checkMissing(ids) {
+  if (!isInitialized || !table) {
+    return ids; // All missing if service not ready
+  }
+
+  try {
+    // Optimization: query all unique doc_ids
+    // Note: limit is arbitrary high number, might need pagination for huge libraries
+    const results = await table
+      .query()
+      .select(['doc_id'])
+      .limit(1000000)
+      .toArray();
+
+    const presentIds = new Set(results.map(r => r.doc_id));
+    return ids.filter(id => !presentIds.has(id));
+  } catch (error) {
+    console.error('[VectorService] Check missing error:', error);
+    return ids; // Assume all missing on error to be safe (or empty?) 
+    // Safest is to return ids so we re-try, but that might cause loops.
+    // Better to log and return empty to avoid infinite re-indexing.
+    // Actually, if we return ids, the app will try to index them.
+    // Let's return ids for now.
+    return ids;
+  }
+}
+
 function isServiceInitialized() {
   return isInitialized;
 }
@@ -387,5 +429,6 @@ module.exports = {
   search,
   deleteDocument,
   getStats,
+  checkMissing,
   isServiceInitialized,
 };
