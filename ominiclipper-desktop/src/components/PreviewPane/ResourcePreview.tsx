@@ -203,7 +203,7 @@ const ResourcePreview: React.FC<ResourcePreviewProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-h-0">
       {/* Loading State - for types that don't have their own loading UI */}
       {loading && effectiveType !== ResourceType.WORD && effectiveType !== ResourceType.PDF && (
         <div className="flex-1 flex items-center justify-center">

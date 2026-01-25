@@ -116,7 +116,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   if (loading) return null;
 
   return (
-    <div className={`h-full flex flex-col ${isLight ? 'bg-white text-gray-800' : 'bg-[#1e1e1e] text-gray-200'}`}>
+    <div className={`h-full flex flex-col min-h-0 overflow-hidden ${isLight ? 'bg-white text-gray-800' : 'bg-[#1e1e1e] text-gray-200'}`}>
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <div className={`prose max-w-none ${isLight ? 'prose-slate' : 'prose-invert'} ${highlightText ? 'highlight-mode' : ''}`}>
           {markdownContent ? (
