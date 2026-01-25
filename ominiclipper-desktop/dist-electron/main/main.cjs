@@ -40,41 +40,14 @@ console.log("protocol:", typeof protocol);
 const isDev = process.env.NODE_ENV === "development";
 let mainWindow;
 function createWindow() {
-  const appPath = app.getAppPath();
-  const preloadPath = isDev ? path.join(process.cwd(), "dist-electron/preload/preload.cjs") : path.join(appPath, "dist-electron/preload/preload.cjs");
+  const preloadPath = path.resolve(__dirname, "../../electron/preload/manual.cjs");
   console.log("[createWindow] ==========================================");
-  console.log("[createWindow] Environment:", isDev ? "DEVELOPMENT" : "PRODUCTION");
-  console.log("[createWindow] CWD:", process.cwd());
-  console.log("[createWindow] App Path:", appPath);
   console.log("[createWindow] __dirname:", __dirname);
   console.log("[createWindow] Target Preload Path:", preloadPath);
-  const preloadExists = fs.existsSync(preloadPath);
-  console.log("[createWindow] Preload Exists:", preloadExists);
-  let finalPreloadPath = preloadPath;
-  if (!preloadExists) {
-    console.log("[createWindow] Preload not found at primary path, trying fallbacks...");
-    const fallback1 = path.resolve(__dirname, "../preload/preload.cjs");
-    if (fs.existsSync(fallback1)) {
-      console.log("[createWindow] Found at fallback 1:", fallback1);
-      finalPreloadPath = fallback1;
-    } else {
-      const fallback2 = path.join(process.cwd(), "dist-electron/preload.cjs");
-      if (fs.existsSync(fallback2)) {
-        console.log("[createWindow] Found at fallback 2:", fallback2);
-        finalPreloadPath = fallback2;
-      }
-    }
+  console.log("[createWindow] Preload Exists:", fs.existsSync(preloadPath));
+  if (!fs.existsSync(preloadPath)) {
+    console.error("❌ CRITICAL: Preload script missing at", preloadPath);
   }
-  if (fs.existsSync(finalPreloadPath)) {
-    try {
-      console.log("[createWindow] Final Preload Size:", fs.statSync(finalPreloadPath).size);
-    } catch (e) {
-      console.error("[createWindow] Failed to stat preload:", e);
-    }
-  } else {
-    console.error("[createWindow] CRITICAL ERROR: Preload script could not be found anywhere!");
-  }
-  console.log("[createWindow] ==========================================");
   const iconPath = path.join(__dirname, "../../dist/assets/icon.png");
   fs.existsSync(iconPath);
   mainWindow = new BrowserWindow({
@@ -88,8 +61,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      // EXPLICITLY DISABLE SANDBOX TO ENSURE PRELOAD LOADS
-      preload: finalPreloadPath
+      // Keep this false to ensure require('electron') works in preload
+      preload: preloadPath
     },
     backgroundColor: "#1e1e1e",
     titleBarStyle: "hiddenInset",
