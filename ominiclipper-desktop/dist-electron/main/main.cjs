@@ -1239,7 +1239,21 @@ app.whenReady().then(async () => {
   console.log("[App] userDataPath:", userDataPath);
   try {
     console.log("[App] Initializing Vector Search Service...");
-    const vectorResult = await vectorService.initialize(userDataPath);
+    let modelId = "bge-m3";
+    try {
+      const settingsPath = path.join(userDataPath, "OmniCollector", "data", "settings.json");
+      if (fs.existsSync(settingsPath)) {
+        const settingsContent = fs.readFileSync(settingsPath, "utf-8");
+        const settings = JSON.parse(settingsContent);
+        if (settings.locale === "en") {
+          modelId = "all-MiniLM-L6-v2";
+        }
+        console.log("[App] Auto-selected model based on locale:", settings.locale, "->", modelId);
+      }
+    } catch (e) {
+      console.warn("[App] Failed to detect locale for model selection, using default:", modelId);
+    }
+    const vectorResult = await vectorService.initialize(userDataPath, modelId);
     console.log("[App] Vector Search:", vectorResult.success ? "✅ Ready" : "❌ Failed -", vectorResult.error || "");
   } catch (err) {
     console.error("[App] Vector Service initialization error:", err);
@@ -1319,11 +1333,35 @@ ipcMain.handle("search:bm25", async (event, { query, limit }) => {
 ipcMain.handle("search:getStats", async () => {
   return await searchIndexManager.getStats();
 });
-ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight = 0.7, bm25Weight = 0.3 }) => {
+ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight: paramVectorWeight, bm25Weight: paramBM25Weight }) => {
   console.log("[HybridSearch] Query:", query, "limit:", limit);
+  let vectorWeight = paramVectorWeight !== void 0 ? paramVectorWeight : 0.7;
+  let bm25Weight = paramBM25Weight !== void 0 ? paramBM25Weight : 0.3;
+  let searchThreshold = 0.5;
   try {
+    const userDataPath = app.getPath("userData");
+    const settingsPath = path.join(userDataPath, "OmniCollector", "data", "settings.json");
+    if (fs.existsSync(settingsPath)) {
+      try {
+        const settingsContent = fs.readFileSync(settingsPath, "utf-8");
+        const settings = JSON.parse(settingsContent);
+        if (paramVectorWeight === void 0 && settings.vectorWeight !== void 0) {
+          vectorWeight = Number(settings.vectorWeight);
+        }
+        if (paramBM25Weight === void 0 && settings.bm25Weight !== void 0) {
+          bm25Weight = Number(settings.bm25Weight);
+        }
+        if (settings.searchThreshold !== void 0) {
+          searchThreshold = Number(settings.searchThreshold);
+        }
+        console.log(`[HybridSearch] Using configuration - vectorWeight: ${vectorWeight}, bm25Weight: ${bm25Weight}, threshold: ${searchThreshold}`);
+      } catch (e) {
+        console.warn("[HybridSearch] Failed to read settings.json:", e);
+      }
+    }
     const [vectorResults, bm25Results] = await Promise.all([
-      vectorService.search(query, limit * 2),
+      // Pass threshold to vector search
+      vectorService.search(query, limit * 2, searchThreshold),
       searchIndexManager.search(query, limit * 2)
     ]);
     console.log("[HybridSearch] Vector results:", (vectorResults == null ? void 0 : vectorResults.length) || 0);

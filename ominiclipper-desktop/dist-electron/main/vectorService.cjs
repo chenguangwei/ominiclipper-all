@@ -284,8 +284,9 @@ async function indexDocument(docId, text, metadata) {
  * Search for similar documents
  * @param {string} query - Search query
  * @param {number} limit - Max results (per document)
+ * @param {number} threshold - Min similarity threshold (0-1, lower distance is better)
  */
-async function search(query, limit = 5) {
+async function search(query, limit = 5, threshold = 0.5) {
   if (!isInitialized || !table) {
     console.log('[VectorService] Search skipped: not initialized or no data');
     return [];
@@ -308,6 +309,13 @@ async function search(query, limit = 5) {
 
     if (Array.isArray(rawResults)) {
       for (const r of rawResults) {
+        // Filter by threshold (LanceDB returns distance, we want small distance)
+        // distance 0 = perfect match. threshold 0.5 means accept distance <= 0.5
+        // effectively similarity >= 0.5
+        if (r._distance > threshold) {
+          continue;
+        }
+
         const docId = r.doc_id;
         if (!docMap.has(docId) || r._distance < docMap.get(docId).score) {
           docMap.set(docId, {
@@ -331,7 +339,7 @@ async function search(query, limit = 5) {
         .sort((a, b) => a.score - b.score)
         .slice(0, limit);
 
-      console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks');
+      console.log('[VectorService] Search found', results.length, 'documents from', rawResults.length, 'chunks (threshold:', threshold, ')');
       return results;
     } else {
       console.error('[VectorService] Search results not iterable:', typeof rawResults, rawResults);

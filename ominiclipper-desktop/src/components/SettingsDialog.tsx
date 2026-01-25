@@ -308,37 +308,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </div>
               </div>
 
-              {/* Embedding Model Selection */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-content">{t('settings.embedding_model')}</label>
-                  <select
-                    className="bg-surface-secondary border border-[rgb(var(--color-border)/0.2)] rounded-lg px-3 py-1.5 text-xs text-content outline-none focus:border-primary"
-                    defaultValue={localStorage.getItem('OMNICLIPPER_EMBEDDING_MODEL') || 'all-MiniLM-L6-v2'}
-                    onChange={async (e) => {
-                      const modelId = e.target.value;
-                      if (confirm(t('settings.confirm_embedding_switch'))) {
-                        localStorage.setItem('OMNICLIPPER_EMBEDDING_MODEL', modelId);
-                        try {
-                          await (window as any).electronAPI.invoke('vector:setModel', { modelId });
-                          alert(t('settings.embedding_switch_success'));
-                        } catch (err) {
-                          console.error('Failed to switch embedding model:', err);
-                          alert(t('settings.embedding_switch_fail') + err);
-                        }
-                      } else {
-                        e.target.value = localStorage.getItem('OMNICLIPPER_EMBEDDING_MODEL') || 'all-MiniLM-L6-v2';
-                      }
-                    }}
-                  >
-                    <option value="all-MiniLM-L6-v2">all-MiniLM-L6-v2 (Fast, Default)</option>
-                    <option value="bge-m3">BAAI/bge-m3 (High Precision, Multi-lingual)</option>
-                  </select>
-                </div>
-                <p className="text-[10px] text-content-secondary mt-1">
-                  {t('settings.embedding_note')}
-                </p>
-              </div>
+
 
               {/* Custom Base URL */}
               {selectedProvider === 'custom' && (
