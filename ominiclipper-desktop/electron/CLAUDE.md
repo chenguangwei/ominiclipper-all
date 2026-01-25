@@ -50,7 +50,6 @@
 | #716 | 1:25 PM | 🟣 | Vector service enhanced with intelligent text chunking | ~316 |
 | #710 | 11:25 AM | ✅ | Enhanced BM25 search with document chunking and aggregation | ~317 |
 | #709 | " | 🟣 | Enhanced search index with automatic text chunking | ~316 |
-| #708 | " | 🟣 | BM25 search implementation created with SQLite FTS5 | ~310 |
 
 ### Jan 22, 2026
 
@@ -62,4 +61,10 @@
 | #924 | 9:47 AM | 🔵 | File Storage Architecture Gap Identified for Embed Mode Migration | ~447 |
 | #922 | 9:46 AM | 🔵 | Electron Backend Storage Architecture Analyzed | ~444 |
 | #917 | 9:43 AM | 🔵 | Omniclipper Desktop Comprehensive Codebase Analysis Completed | ~420 |
+
+### Jan 23, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #985 | 6:59 PM | 🔵 | Model Deployment Strategy Discovery - Hybrid Local/Network Approach | ~315 |
 </claude-mem-context>

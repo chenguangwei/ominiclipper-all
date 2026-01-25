@@ -15,7 +15,7 @@
 
 | 核心模块 | 当前代码实现 (Status: Current) | 理想设计目标 (Goal: Ideal) | 评价 & 风险 |
 | :--- | :--- | :--- | :--- |
-| **数据存储** | **JSON 文件流 (Eagle 模式)**<br>`itemMetadataService.ts` 读写 json 文件 | **向量数据库 + 关系型数据库**<br>(LanceDB + SQLite) | **高风险**。纯 JSON 文件无法进行向量搜索（语义搜索），且文件多了 IO 会卡死。 |
+| **数据存储** | **文件流 **<br>json 为 metadata.json 文件记录文件基本信息，原文件保存在对应的文件夹下， | **向量数据库 + 关系型数据库**<br>(LanceDB + SQLite) | **高风险**。markdown 进行向量搜索（语义搜索），且文件多了 IO 会卡死。 |
 | **AI 能力** | **纯云端 API 调用**<br>`aiClassifier.ts` 调用 OpenAI/DeepSeek | **本地 + 云端混合 (Hybrid)**<br>(本地 Embedding + 本地 LLM + 云端 GPT) | **功能缺失**。目前没有 Embedding 过程，无法实现 "Chat with Data"（与数据对话）。 |
 | **通信安全** | **无鉴权 HTTP 服务**<br>`httpServer.cjs` 允许任何来源 | **基于 Token 的安全通信** | **安全隐患**。任何本地网页都能向你的应用发请求。 |
 | **搜索能力** | **仅标签/文件名匹配** | **语义搜索 (RAG)** | 目前只能搜 "合同"，搜不到 "关于赔偿的条款"。 |

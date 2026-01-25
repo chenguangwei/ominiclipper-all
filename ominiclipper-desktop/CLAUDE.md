@@ -20,7 +20,6 @@
 | #788 | " | 🟣 | Added Development Mode PDF Worker Plugin | ~290 |
 | #785 | 6:26 PM | 🔴 | Confirmed PDF Worker File Successfully Copied to dist | ~277 |
 | #779 | 6:22 PM | 🔴 | Fixed PDF Worker Configuration in Vite Build | ~293 |
-| #758 | 1:52 PM | ✅ | Vite build configuration manages Electron file copying | ~310 |
 
 ### Jan 22, 2026
 
@@ -41,177 +40,18 @@
 | #916 | 9:42 AM | 🔵 | Omniclipper Desktop Comprehensive Architecture Analysis Completed | ~438 |
 | #915 | " | 🔵 | Omniclipper Desktop Application Architecture Mapped | ~336 |
 | #914 | " | 🔵 | Omniclipper Desktop Application Architecture Mapped | ~312 |
+
+### Jan 23, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #985 | 6:59 PM | 🔵 | Model Deployment Strategy Discovery - Hybrid Local/Network Approach | ~315 |
+| #982 | 6:58 PM | 🔵 | Project Dependencies and Architecture Revealed | ~272 |
+
+### Jan 25, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #998 | 11:34 AM | 🟣 | Enhanced Vite Configuration for Browser Mode Testing | ~282 |
+| #997 | 11:31 AM | 🔵 | Examined OmniCollector Desktop Package Dependencies | ~240 |
 </claude-mem-context>
-
-# OmniClipper Desktop - Development Guide
-
-This document provides guidance for Claude when working with OmniClipper Desktop codebase.
-
-## Project Overview
-
-OmniClipper Desktop is a resource management desktop client built with React + TypeScript + Vite, featuring macOS-native design, multiple view modes, and cloud sync via Supabase.
-
-## Completed Features
-
-All features marked as "待实现" in README.md have been completed:
-
-- [x] 文件拖拽导入 - Drag and drop file import
-- [x] 文档内容预览 - Document content preview (Details/Preview tabs)
-- [x] 快捷键支持 - Keyboard shortcuts (⌘N, ⌘F, ⌘E, etc.)
-- [x] 数据导入/导出 UI - Import/Export dialog (JSON/CSV)
-- [x] 多语言支持 (i18n) - Internationalization (English/Chinese)
-- [x] Electron 桌面应用打包 - Electron desktop app packaging
-- [x] 实际文件路径管理 - File path management (starred, recent files, file stats)
-- [x] 文档全文内容预览 - Full document rendering (PDF/EPUB with PDF.js/EPUB.js)
-- [x] AI 智能摘要功能 - AI-powered content summarization
-
-### All Features Complete
-All planned features from README.md have been implemented. The application now includes:
-- Complete resource management (create, edit, delete, organize)
-- Multiple view modes (list, table, grid)
-- Document preview and rendering (PDF.js, EPUB.js)
-- Star/favorite items with filtering
-- Recent files tracking and statistics
-- AI summarization with one-click generation
-- Cloud sync with Supabase
-- Electron desktop packaging
-
-## Architecture
-
-```
-ominiclipper-desktop/
-├── App.tsx                 # Main app component with state management
-├── index.tsx               # App entry point
-├── index.html              # HTML template
-├── types.ts                # TypeScript types
-├── constants.ts            # Constants, themes, mock data
-├── supabaseClient.ts       # Supabase client
-├── vite.config.ts          # Vite configuration
-├── package.json            # Project config & Electron builder
-├── electron/
-│   ├── main.js             # Electron main process
-│   └── preload.js          # Preload script for secure IPC
-├── services/
-│   ├── storageService.ts   # localStorage operations
-│   ├── i18n.ts             # Internationalization service
-│   ├── fileManager.ts      # File path management (starred, recent, stats)
-│   └── documentViewer.ts   # PDF/EPUB rendering service (PDF.js/EPUB.js)
-└── components/
-    ├── TopBar.tsx          # Top toolbar (search, view switcher, actions)
-    ├── Sidebar.tsx         # Left sidebar (folders, tags, user)
-    ├── ListDetailView.tsx  # List detail view
-    ├── PreviewPane.tsx     # Preview pane with Details/Preview tabs, AI summary
-    ├── TableView.tsx       # Table view
-    ├── GridView.tsx        # Grid view
-    ├── AuthDialog.tsx      # Authentication/settings dialog
-    ├── ImportExportDialog.tsx  # Import/Export dialog
-    ├── CreateResourceDialog.tsx    # Create/edit resource dialog with form validation & light/dark mode
-    │   ├── Props: isOpen, onClose, onSave, tags, folders, editItem (optional), colorMode (required)
-    │   ├── State: title (required), type (WEB default), path, contentSnippet, selectedTags[], folderId, color (tag-blue default), isCloud
-    │   ├── RESOURCE_TYPE_OPTIONS: WEB, WORD, PDF, EPUB, IMAGE, UNKNOWN with icons
-    │   ├── COLOR_OPTIONS: tag-blue, tag-green, tag-orange, tag-red, tag-yellow, tag-purple
-    │   ├── Features: Resource type grid buttons, URL input (WEB only), folder hierarchy select with recursion, tag toggle buttons, color picker circle buttons, cloud sync toggle, full light/dark mode support
-    │   ├── Edit Mode: Pre-fills all fields from editItem when provided, resets on close
-    │   └── Validation: Title required, auto-focus on title input
-    ├── CreateFolderDialog.tsx      # Create/edit folder dialog with light/dark mode
-    │   ├── Props: isOpen, onClose, onSave, folders, editFolder (optional), colorMode (required)
-    │   └── Features: Name input, parent folder select, icon grid picker (12 icons), full light/dark mode support
-    ├── CreateTagDialog.tsx         # Create/edit tag dialog with light/dark mode
-    │   ├── Props: isOpen, onClose, onSave, tags, editTag (optional), colorMode (required)
-    │   └── Features: Name input, parent tag select, color picker (8 colors), live preview, full light/dark mode support
-    ├── ConfirmDialog.tsx           # Confirmation dialog
-    ├── DocumentViewer.tsx          # Full document viewer (PDF/EPUB)
-    └── Icon.tsx            # Icon component
-```
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `⌘/Ctrl + N` | Create new resource |
-| `⌘/Ctrl + F` | Focus search |
-| `⌘/Ctrl + E` | Open Import/Export dialog |
-| `⌘/Ctrl + 1` | Table view |
-| `⌘/Ctrl + 2` | List detail view |
-| `⌘/Ctrl + 3` | Grid view |
-| `Delete` | Delete selected item |
-| `Escape` | Close dialogs |
-| `↑/↓` | Navigate between items |
-
-## Development Guidelines
-
-### Running the App
-
-1. Development mode:
-   ```bash
-   cd ominiclipper-desktop
-   npm install
-   npm run dev
-   ```
-   Visit http://localhost:3000
-
-2. Build for web:
-   ```bash
-   npm run build
-   ```
-
-3. Run Electron development:
-   ```bash
-   npm run electron
-   ```
-
-4. Build Electron desktop app:
-   ```bash
-   npm run electron:build   # All platforms
-   npm run electron:build:mac   # macOS
-   npm run electron:build:win    # Windows
-   ```
-
-### Adding New Features
-
-1. **New Resource Type**: Add to `ResourceType` enum in `types.ts`, update `getResourceTypeFromFile()` in `App.tsx`, and add icon/color in `constants.ts`
-
-2. **New Dialog**: Create component in `components/`, add state in `App.tsx`, include in render
-
-3. **New View Mode**: Add to `ViewMode` enum, create component, add to view switcher in `App.tsx`
-
-4. **New Storage Backend**: Create service in `services/`, add configuration UI, update `storageService.ts` to switch modes
-
-### Internationalization (i18n)
-
-- Translations are in `services/i18n.ts`
-- Currently supports English (`en`) and Chinese (`zh_CN`)
-- Use `t(key)` function for translations
-- Use `formatDate()` and `formatRelativeTime()` for date formatting
-
-### Electron Integration
-
-- Main process: `electron/main.js`
-- Preload script: `electron/preload.js`
-- Build config: `package.json` -> `build` section
-- Icons: Place in `public/` folder (required for packaging)
-
-## Tech Stack
-
-- **Framework**: React 19 + TypeScript
-- **Build Tool**: Vite 6
-- **Styling**: Tailwind CSS
-- **Icons**: Google Material Symbols
-- **Backend**: Supabase
-- **Desktop**: Electron + electron-builder
-- **i18n**: Custom implementation
-
-## Security Notes
-
-- Supabase anonKey is safe to expose (RLS protects data)
-- All sensitive Electron APIs exposed through contextBridge
-- File operations use secure dialogs
-- Token caching reduces API calls
-
-## Code Style
-
-- Use TypeScript for all new files
-- Follow React functional component patterns
-- Use Tailwind CSS for styling (macOS dark theme)
-- Keep components focused and composable
-- Use proper TypeScript interfaces for props

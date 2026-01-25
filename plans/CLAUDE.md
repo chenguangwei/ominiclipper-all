@@ -15,4 +15,10 @@
 |----|------|---|-------|------|
 | #618 | 4:24 PM | ⚖️ | Implementation Approach Selected for Phase 2 | ~284 |
 | #612 | 4:19 PM | ✅ | Supabase Environment Configuration Implementation | ~242 |
+
+### Jan 23, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #986 | 7:17 PM | 🔴 | better-sqlite3 Native Module Rebuild Required | ~317 |
 </claude-mem-context>

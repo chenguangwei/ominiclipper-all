@@ -1,49 +1,13 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import electron from 'vite-plugin-electron';
 import { resolve } from 'path';
-import { copyFileSync, mkdirSync, existsSync } from 'fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { builtinModules } from 'module';
 
-// Plugin to copy electron CJS files to dist-electron
-function electronCopyPlugin() {
-  return {
-    name: 'electron-copy',
-    closeBundle: () => {
-      const mainSrc = resolve(__dirname, 'electron/main.cjs');
-      const preloadSrc = resolve(__dirname, 'electron/preload.js');
-      const httpServerSrc = resolve(__dirname, 'electron/httpServer.cjs');
-      const vectorServiceSrc = resolve(__dirname, 'electron/vectorService.cjs');
-      const textChunkerSrc = resolve(__dirname, 'electron/textChunker.cjs');
-      const searchIndexManagerSrc = resolve(__dirname, 'electron/searchIndexManager.cjs');
-      const mainDestDir = resolve(__dirname, 'dist-electron/main');
-      const preloadDestDir = resolve(__dirname, 'dist-electron/preload');
-
-      if (!existsSync(mainDestDir)) mkdirSync(mainDestDir, { recursive: true });
-      if (!existsSync(preloadDestDir)) mkdirSync(preloadDestDir, { recursive: true });
-
-      copyFileSync(mainSrc, resolve(mainDestDir, 'main.cjs'));
-      // Copy preload.js as preload.cjs for CommonJS compatibility
-      copyFileSync(preloadSrc, resolve(preloadDestDir, 'preload.cjs'));
-      // Copy httpServer.cjs for browser extension sync
-      if (existsSync(httpServerSrc)) {
-        copyFileSync(httpServerSrc, resolve(mainDestDir, 'httpServer.cjs'));
-      }
-      // Copy vectorService.cjs for vector storage service
-      if (existsSync(vectorServiceSrc)) {
-        copyFileSync(vectorServiceSrc, resolve(mainDestDir, 'vectorService.cjs'));
-      }
-      // Copy textChunker.cjs for text chunking
-      if (existsSync(textChunkerSrc)) {
-        copyFileSync(textChunkerSrc, resolve(mainDestDir, 'textChunker.cjs'));
-      }
-      // Copy searchIndexManager.cjs for BM25 search
-      if (existsSync(searchIndexManagerSrc)) {
-        copyFileSync(searchIndexManagerSrc, resolve(mainDestDir, 'searchIndexManager.cjs'));
-      }
-      console.log('Electron CJS files copied to dist-electron/');
-    }
-  };
-}
+// Check if we should skip Electron plugin (when running with external Electron)
+const skipElectron = process.env.SKIP_ELECTRON === 'true';
 
 // Plugin to copy PDF.js worker to dist folder
 function pdfWorkerCopyPlugin() {
@@ -54,6 +18,9 @@ function pdfWorkerCopyPlugin() {
       const pdfWorkerDest = resolve(__dirname, 'dist/pdf.worker.min.mjs');
 
       if (existsSync(pdfWorkerSrc)) {
+        if (!existsSync(resolve(__dirname, 'dist'))) {
+          // checking just in case, though build usually creates it
+        }
         copyFileSync(pdfWorkerSrc, pdfWorkerDest);
         console.log('PDF.js worker copied to dist/');
       } else {
@@ -68,7 +35,6 @@ function pdfWorkerDevPlugin() {
   return {
     name: 'pdf-worker-dev',
     configureServer(server: any) {
-      // Handle PDF worker requests in development mode
       server.middlewares.use('/pdf.worker.min.mjs', (req: any, res: any, next: any) => {
         const pdfWorkerPath = resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
         if (existsSync(pdfWorkerPath)) {
@@ -82,6 +48,27 @@ function pdfWorkerDevPlugin() {
     }
   };
 }
+// Plugin to remove export default from electron builds (fixes syntax error in CJS)
+function removeExportDefaultPlugin() {
+  return {
+    name: 'remove-export-default',
+    writeBundle(options: any, bundle: any) {
+      for (const fileName in bundle) {
+        if (fileName.endsWith('.cjs')) {
+          const filePath = resolve(options.dir, fileName);
+          if (existsSync(filePath)) {
+            const content = readFileSync(filePath, 'utf-8');
+            if (content.includes('export default')) {
+              const newContent = content.replace(/export default.*;\s*$/, '').replace(/export default.*;/g, '');
+              writeFileSync(filePath, newContent);
+              console.log(`Removed export default from ${fileName}`);
+            }
+          }
+        }
+      }
+    }
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -89,28 +76,81 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: '.',
-    base: isDev ? '/' : './',
+    base: './', // Electron mostly works with relative paths
     server: {
       port: 3000,
       host: '0.0.0.0',
     },
     plugins: [
       react(),
-      electronCopyPlugin(),
+      // Only load electron plugin when not skipping (i.e., not running with external Electron)
+      ...(skipElectron ? [] : [
+        electron([
+          {
+            // Main-Process entry file
+            entry: 'electron/main/index.ts',
+            onstart(options) {
+              options.startup()
+            },
+            vite: {
+              plugins: [removeExportDefaultPlugin()],
+              build: {
+                sourcemap: isDev,
+                minify: isDev ? false : 'esbuild',
+                outDir: 'dist-electron/main',
+                lib: {
+                  entry: 'electron/main/index.ts',
+                  formats: ['cjs'],
+                  fileName: () => 'main.cjs',
+                },
+                rollupOptions: {
+                  external: ['electron', ...builtinModules],
+                },
+              },
+            },
+          },
+          {
+            entry: 'electron/preload/index.ts',
+            onstart(options) {
+              // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete,
+              // instead of restarting the entire Electron App.
+              options.reload()
+            },
+            vite: {
+              plugins: [removeExportDefaultPlugin()],
+              build: {
+                sourcemap: isDev ? 'inline' : undefined,
+                minify: isDev ? false : 'esbuild',
+                outDir: 'dist-electron/preload',
+                rollupOptions: {
+                  external: ['electron', ...builtinModules],
+                  output: {
+                    entryFileNames: 'preload.cjs',
+                    format: 'cjs',
+                    inlineDynamicImports: true,
+                    // Force the code to execute immediately
+                    strict: false,
+                  }
+                },
+              },
+            },
+          }
+        ])
+      ]),
       pdfWorkerCopyPlugin(),
       ...(isDev ? [pdfWorkerDevPlugin()] : [])
     ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.NODE_ENV': JSON.stringify(mode),
+      // NODE_ENV is automatically handled, but we can preserve if needed
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
-        'utils': path.resolve(__dirname, 'utils'),
-        'hooks': path.resolve(__dirname, 'hooks'),
-        'types': path.resolve(__dirname, 'types'),
+        '@': path.resolve(__dirname, './src'),
+        'utils': path.resolve(__dirname, './src/utils'),
+        'hooks': path.resolve(__dirname, './src/hooks'),
+        'types': path.resolve(__dirname, './src/types'),
       }
     },
     build: {

@@ -1,37 +1,371 @@
-设计一个方便记录资料桌面客户端
-## 要求
-能够实现方便资料整理和收藏的功能，包含网站收藏、文章收藏、文档整理（word、pdf、excel、ppt、epub），图片收藏等资料收藏和整理
-功能
-1. 网站收藏：
-    1）浏览器插件：支持浏览器插件一键网站收藏（自动获取链接），操作的时候自动获取网页地址链接，如果网页自动获取 title 和 description 、网站 logo、等相关网页信息
-    2）桌面客户端：支持以列表、卡片形式显示、支持新增。
-2. 文章收藏：
-    1）浏览器插件：支持浏览器插件一键文章收藏（自动获取链接），操作的时候自动获取网页地址链接，如果网页自动获取抓取文章标题，以及整篇文章内容（类似clearlyreader 浏览器插件），以markdown的格式进行填充，支持修改
-    2）桌面客户端：支持以列表、卡片形式显示、支持新增。支持点击查看详情文章内容。
-3. 图片收藏：
-    1）浏览器插件：支持浏览器插件图片收藏（支持拖拽、区域截图、整页截图等功能），操作的时候自动获取截图图片的网页地址链接，以及图片网址的 title 作为图片的名称，以及获取到的网页的description 相关网页信息内容作为图片的描述，
-    2）桌面客户端：支持以列表、卡片形式显示、支持新增、拖拽图片进入，然后获取自动获取填充图片名称，其他信息支持手工添加，支持图片的分类、标签、文件夹、图片基本信息等
+# OmniClipper / OmniCollector
 
-4. 文档整理：word、pdf
-    1）浏览器插件无此功能
-    2）桌面客户端：支持以列表、卡片形式显示、支持拖拽，拖拽的时候支持只引用文件路径的方式和直接放文件放入，让文档整理软件管理的目录文件夹结构下。
-    目的是：解决人有很多文件不知道如何分类整理文件的问题。拖拽后自动进行归类和创建文件夹，   
+> **Note**: This project has been renamed to OmniCollector. The repository contains both the desktop application and browser extension components.
 
-  - PC 桌面客户端软件能够与浏览器插件内容联动。
-  - 规划AI功能，能够让 AI 拔高此软件的功能实现。
+一个 AI Native 个人知识管理工具，帮助用户实现"无感归档"和"语义搜索"。
 
-- 多语言支持：支持中英文
+## 目录
 
-- 客户端可以用 electron类型 实现的客户端
+- [核心功能](#核心功能)
+- [技术架构](#技术架构)
+- [项目结构](#项目结构)
+- [快速开始](#快速开始)
+- [已完成功能](#已完成功能)
+- [待完成功能](#待完成功能)
+- [开发指南](#开发指南)
 
-- 支持记录本地和云端。云端是 pro 会员。
-- 云端存储是 用 superbase 支持
-- 现在browser-extension 是已经实现的浏览器插件的UI 部分。功能还没有实现； ominiclipper-desktop 是已经实现的桌面客户端软件的 UI 部分，功能还没有实现，需要举行实现。
+---
 
-## 风格
-参考已经实现的代码，苹果风格
+## 核心功能
 
+### 1. 智能内容管理
 
-ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" \
-ELECTRON_CUSTOM_DIR="{{ version }}" \
+| 功能 | 描述 |
+|------|------|
+| **无感归档** | 拖拽文件自动分类，AI 根据内容打标签、分类 |
+| **语义搜索** | 基于向量的语义搜索，搜"关于赔偿的条款"能找到"合同"文档 |
+| **多格式支持** | PDF、DOCX、Markdown、图片、网页、PPT、Excel 等 |
+| **全屏预览** | 内置文档预览器，支持多种格式 |
+
+### 2. AI 能力 (本地 + 云端混合)
+
+| 功能 | 状态 | 描述 |
+|------|------|------|
+| **本地 Embedding** | ✅ | 使用 Transformers.js 在本地生成向量 |
+| **向量搜索** | ✅ | LanceDB 向量数据库，秒级语义搜索 |
+| **AI 分类** | ✅ | LLM 驱动的智能分类建议 |
+| **Chat with Data** | 🔄 | 基于私人库的 RAG 问答（部分实现） |
+| **混合搜索** | ✅ | 向量 + BM25 全文搜索，RRF 融合排序 |
+
+### 3. 数据存储
+
+| 模式 | 描述 |
+|------|------|
+| **Embed 模式** | 文件 Base64 编码存入数据库，便于迁移 |
+| **Reference 模式** | 仅保存文件路径，节省空间（Eagle 风格） |
+| **自动迁移** | 支持两种模式间自动转换 |
+
+---
+
+## 技术架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        OmniCollector                            │
+├─────────────────────┬───────────────────────────────────────────┤
+│  浏览器扩展          │              桌面客户端                    │
+│  (Chrome MV3)       │            (Electron + React)             │
+├─────────────────────┼───────────────────────────────────────────┤
+│                     │                                           │
+│  - Content Script   │  ┌─────────────────────────────────────┐  │
+│  - Popup UI         │  │         Render Process (React)       │  │
+│  - Service Worker   │  │                                     │  │
+│                     │  │  - App.tsx (主应用)                  │  │
+│  云同步服务:         │  │  - Components/ (UI组件)             │  │
+│  - Supabase         │  │  - Services/ (业务逻辑)              │  │
+│  - Feishu           │  │  - Hooks/ (自定义Hook)               │  │
+│                     │  │  - Storage/ (数据持久化)             │  │
+└─────────────────────┴─────────────────────────────────────┬────┘
+                                                          │
+                          IPC                              │
+                    ┌──────────────┐                       │
+                    │  Preload     │◄──────────────────────┘
+                    │  (桥接层)    │
+                    └──────┬───────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+        ┌─────▼─────┐            ┌──────▼──────┐
+        │  Main     │            │  Vector     │
+        │  Process  │            │  Service    │
+        │ (IPC处理) │            │ (LanceDB)   │
+        └─────┬─────┘            └──────┬──────┘
+              │                         │
+    ┌─────────┼─────────┬───────────────┤
+    │         │         │               │
+┌───▼───┐ ┌───▼───┐ ┌───▼───┐    ┌──────▼──────┐
+│ 文件  │ │ JSON  │ │SQLite │    │  HTTP Server│
+│ 系统  │ │存储   │ │ FTS5  │    │  (文件访问) │
+└───────┘ └───────┘ └───────┘    └─────────────┘
+```
+
+### 技术栈
+
+**桌面端**
+- **框架**: Electron 35 + React 19 + TypeScript 5
+- **构建**: Vite 5 + electron-builder
+- **样式**: Tailwind CSS
+- **向量数据库**: LanceDB + Transformers.js (本地 Embedding)
+- **全文搜索**: Better-SQLite3 (FTS5)
+- **文档预览**: PDF.js, docx-preview, react-markdown
+
+**浏览器扩展**
+- **Manifest**: Chrome Extension Manifest v3
+- **框架**: React 19 + Vite 6
+- **云服务**: Supabase / 飞书
+
+### AI 集成
+
+| 提供商 | 状态 | 支持模型 |
+|--------|------|----------|
+| OpenAI | ✅ | GPT-4o, GPT-3.5-turbo |
+| Anthropic | ✅ | Claude 3.5, Claude 3 |
+| DeepSeek | ✅ | DeepSeek Chat |
+| SiliconFlow | ✅ | 多种开源模型 |
+
+---
+
+## 项目结构
+
+```
+ominiclipper-all/
+├── ominiclipper-desktop/           # 桌面应用 (Electron + React)
+│   ├── electron/                   # Electron 主进程
+│   │   ├── main/                   # 主进程入口
+│   │   │   ├── index.ts            # 主进程核心逻辑
+│   │   │   ├── httpServer.cjs      # HTTP 服务器（文件访问）
+│   │   │   ├── vectorService.cjs   # 向量服务 (LanceDB)
+│   │   │   └── searchIndexManager.cjs  # 搜索索引管理
+│   │   └── preload/                # 预加载脚本
+│   │       └── index.ts            # IPC API 暴露
+│   │
+│   ├── src/                        # React 前端源码
+│   │   ├── app/
+│   │   │   ├── App.tsx             # 主应用组件
+│   │   │   └── main.tsx            # 应用入口
+│   │   │
+│   │   ├── components/             # UI 组件
+│   │   │   ├── Sidebar.tsx         # 侧边栏（文件夹/标签）
+│   │   │   ├── TopBar.tsx          # 顶部栏（搜索/操作）
+│   │   │   ├── ListDetailView.tsx  # 列表详情视图
+│   │   │   ├── GridView.tsx        # 网格视图（卡片）
+│   │   │   ├── TableView.tsx       # 表格视图
+│   │   │   ├── PreviewPane/        # 预览面板
+│   │   │   │   ├── ResourcePreview.tsx
+│   │   │   │   ├── ResourceDetails.tsx
+│   │   │   │   └── renderers/      # 各类文件渲染器
+│   │   │   │       ├── PdfRenderer.tsx
+│   │   │   │       ├── WordRenderer.tsx
+│   │   │   │       └── ImageRenderer.tsx
+│   │   │   ├── DocumentViewer.tsx  # 全屏文档查看器
+│   │   │   ├── AIAssistant.tsx     # AI 助手面板
+│   │   │   ├── SettingsDialog.tsx  # 设置对话框
+│   │   │   ├── AuthDialog.tsx      # 认证对话框
+│   │   │   └── ... (更多组件)
+│   │   │
+│   │   ├── services/               # 业务服务层
+│   │   │   ├── storage/            # 数据存储
+│   │   │   │   ├── persistence.ts  # 持久化核心
+│   │   │   │   ├── items.ts        # 资源项 CRUD
+│   │   │   │   ├── tags_folders.ts # 标签/文件夹管理
+│   │   │   │   └── settings.ts     # 设置管理
+│   │   │   ├── storageService.ts   # 存储服务门面
+│   │   │   ├── vectorStoreService.ts   # 向量存储服务
+│   │   │   ├── hybridSearchService.ts  # 混合搜索服务
+│   │   │   ├── aiClassifier.ts     # AI 分类器
+│   │   │   ├── chatService.ts      # AI 聊天服务
+│   │   │   ├── llmProvider.ts      # LLM 提供商
+│   │   │   ├── fileStorageService.ts   # 文件存储服务
+│   │   │   ├── fileManager.ts      # 文件管理
+│   │   │   ├── contentExtractionService.ts  # 内容提取
+│   │   │   ├── thumbnailService.ts # 缩略图生成
+│   │   │   ├── backupService.ts    # 备份恢复
+│   │   │   └── ... (更多服务)
+│   │   │
+│   │   ├── hooks/                  # 自定义 Hooks
+│   │   │   ├── useAppInit.ts       # 应用初始化
+│   │   │   ├── useSemanticSearch.ts # 语义搜索
+│   │   │   ├── useFiltering.ts     # 筛选/排序
+│   │   │   ├── useDragDrop.ts      # 拖放操作
+│   │   │   └── ... (更多 Hooks)
+│   │   │
+│   │   ├── types/                  # 类型定义
+│   │   │   ├── index.ts            # 核心类型 (ResourceItem, ResourceType等)
+│   │   │   ├── classification.ts   # AI 分类相关类型
+│   │   │   └── chat.ts             # 聊天相关类型
+│   │   │
+│   │   ├── utils/                  # 工具函数
+│   │   │   └── fileHelpers.ts      # 文件操作辅助函数
+│   │   │
+│   │   └── pages/                  # 页面组件
+│   │       └── ClassificationSettings.tsx
+│   │
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   └── electron-vite.config.ts
+│
+├── browser-extension/              # 浏览器扩展
+│   └── src/
+│       ├── background/             # Service Worker
+│       ├── popup/                  # 弹窗界面
+│       ├── content/                # Content Script
+│       ├── components/             # UI 组件
+│       ├── services/               # 服务层
+│       └── types/                  # 类型定义
+│
+├── plans/                         # 设计文档
+└── README.md                       # 本文档
+```
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 18+
+- npm 或 yarn
+- macOS / Windows / Linux
+
+### 安装依赖
+
+```bash
+cd ominiclipper-desktop
 npm install
+```
+
+### 开发模式
+
+```bash
+# 同时启动 Vite 开发服务器和 Electron
+npm run electron:dev
+```
+
+### 构建发布版本
+
+```bash
+# 构建前端
+npm run build
+
+# 构建 Electron 应用
+npm run electron:build:mac   # macOS
+npm run electron:build:win   # Windows
+npm run electron:build:linux  # Linux
+```
+
+---
+
+## 已完成功能
+
+### 桌面客户端核心功能
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 文件管理 | ✅ | 文件夹、标签、颜色分类 |
+| 多视图支持 | ✅ | 列表、网格、表格三种视图 |
+| 文档预览 | ✅ | PDF、DOCX、Markdown、图片、Web |
+| 文件存储服务 | ✅ | Eagle 风格存储结构 |
+| 本地数据持久化 | ✅ | JSON 文件存储 |
+| 文件备份与恢复 | ✅ | 导入导出功能 |
+| 国际化支持 | ✅ | 中英文切换 |
+
+### AI 能力
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 向量搜索服务 | ✅ | LanceDB + Transformers.js |
+| Embedding 模型 | ✅ | all-MiniLM-L6-v2 (本地) |
+| BM25 全文搜索 | ✅ | SQLite FTS5 |
+| 混合搜索 | ✅ | 向量 + BM25 + RRF 融合 |
+| AI 分类器 | ✅ | LLM 驱动智能分类 |
+| AI 聊天框架 | ✅ | Chat Service 基础架构 |
+| LLM 多提供商 | ✅ | OpenAI, Anthropic, DeepSeek 等 |
+
+### 存储架构
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 存储服务门面 | ✅ | storageService.ts |
+| 资源项管理 | ✅ | items.ts CRUD 操作 |
+| 标签/文件夹 | ✅ | tags_folders.ts |
+| 设置管理 | ✅ | settings.ts |
+| 向量索引 | ✅ | items.ts 内置集成 |
+
+---
+
+## 待完成功能
+
+### Phase 1: 本地能力完善 (高优先级)
+
+| 功能 | 优先级 | 说明 |
+|------|--------|------|
+| **自动索引** | P0 | 文件导入时自动建立向量索引 |
+| **存量数据扫描** | P0 | 启动时扫描已有文件并索引 |
+| **混合搜索 UI 集成** | P0 | 搜索框同时支持向量和关键词搜索 |
+| **RAG 问答链路** | P1 | 完整实现 Chat with Data |
+
+### Phase 2: 云端功能 (中优先级)
+
+| 功能 | 优先级 | 说明 |
+|------|--------|------|
+| **Supabase Schema 部署** | P1 | 数据库表结构和 RLS 策略 |
+| **云端同步** | P2 | 资源云端存储和同步 |
+| **用户认证完善** | P1 | 登录/注册 UI 优化 |
+| **Stripe 支付集成** | P2 | 订阅付费功能 |
+
+### Phase 3: 体验优化 (低优先级)
+
+| 功能 | 优先级 | 说明 |
+|------|--------|------|
+| **浏览器插件 UI 完善** | P2 | Popup 界面优化 |
+| **右键菜单完整功能** | P3 | 浏览器扩展右键集成 |
+| **缩略图生成优化** | P3 | 更快的缩略图生成 |
+| **OCR 文档解析** | P3 | 图片文字识别 |
+| **表格还原功能** | P3 | PDF 表格提取 |
+
+### 技术债务
+
+| 功能 | 优先级 | 说明 |
+|------|--------|------|
+| **httpServer 安全加固** | P1 | 添加 Token 鉴权 |
+| **清理 AuthDialog** | P2 | 移除配置输入界面 |
+| **单元测试覆盖** | P3 | 添加测试用例 |
+| **错误处理完善** | P2 | 统一错误处理机制 |
+
+---
+
+## 开发指南
+
+### 添加新资源类型
+
+1. 在 `src/types/index.ts` 的 `ResourceType` 枚举中添加类型
+2. 在 `src/components/PreviewPane/renderers/` 添加对应的渲染器
+3. 在 `src/services/contentExtractionService.ts` 添加提取逻辑
+
+### 添加 LLM 提供商
+
+1. 在 `src/services/llmProvider.ts` 的 `providers` 配置中添加
+2. 更新 `getModels()` 方法返回可用模型列表
+3. 在设置界面添加对应的配置项
+
+### 修改存储结构
+
+1. 修改 `src/services/storage/types.ts` 中的类型定义
+2. 更新 `src/services/storage/persistence.ts` 的读写逻辑
+3. 编写迁移脚本处理存量数据
+
+### IPC API 扩展
+
+1. 在 `electron/preload/index.ts` 添加新的 API
+2. 在 `electron/main/index.ts` 添加对应的 `ipcMain.handle`
+3. 在 `src/services/storageService.ts` 暴露给渲染进程
+
+---
+
+## 许可证
+
+MIT License
+
+---
+
+## 更新日志
+
+### v1.0.0 (2026-01)
+
+- 完成核心架构重构
+- 实现向量搜索服务 (LanceDB)
+- 实现混合搜索 (向量 + BM25)
+- 实现 AI 分类器
+- 实现多视图 UI (列表/网格/表格)
+- 实现文档预览 (PDF/DOCX/图片等)
