@@ -1,11 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// Use explicit path that matches our vite config copy
 import { ResourceItem, ColorMode, ResourceType } from '../../../types';
 import Icon from '../../Icon';
 
 // Configure PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+// In dev, the vite plugin serves it at /pdf.worker.min.mjs
+// In prod, it is copied to dist/pdf.worker.min.mjs
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface PdfRendererProps {
   item: ResourceItem;
@@ -53,30 +55,51 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
         container.innerHTML = '';
 
         // Load PDF document
-        const pdf = await pdfjsLib.getDocument({ data: content.slice(0) }).promise;
+        const loadingTask = pdfjsLib.getDocument({ data: content.slice(0) });
+        const pdf = await loadingTask.promise;
+        const totalPages = pdf.numPages;
 
-        // Render first page
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.5 });
+        console.log(`Rendering PDF with ${totalPages} pages`);
 
-        // Create canvas for rendering
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        canvas.style.backgroundColor = '#ffffff';
-        canvas.style.border = '1px solid #e5e5e5';
-        canvas.style.display = 'block';
-        canvas.style.margin = '0 auto';
+        // Render all pages
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          if (!isMounted) break;
 
-        container.appendChild(canvas);
+          // Process each page
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.5 });
 
-        // Render page to canvas
-        await page.render({
-          canvasContext: context!,
-          viewport: viewport,
-          canvas: canvas,
-        }).promise;
+          // Create wrapper for the page to add spacing
+          const pageWrapper = document.createElement('div');
+          pageWrapper.style.marginBottom = '20px';
+          pageWrapper.style.display = 'flex';
+          pageWrapper.style.justifyContent = 'center';
+          container.appendChild(pageWrapper);
+
+          // Create canvas for rendering
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          // Style canvas
+          canvas.style.backgroundColor = '#ffffff';
+          canvas.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+          if (isLight) {
+            canvas.style.border = '1px solid #e5e5e5';
+          }
+
+          pageWrapper.appendChild(canvas);
+
+          // Render page to canvas
+          // Use await to render sequentially to avoid overwhelming the browser
+          await page.render({
+            canvasContext: context!,
+            viewport: viewport,
+            canvas: canvas,
+          }).promise;
+        }
+
       } catch (err: any) {
         console.error('PDF preview error:', err);
       }
@@ -87,12 +110,12 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [content, loading, error]);
+  }, [content, loading, error, isLight]);
 
   const shouldShowView = onOpenDocument;
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
       {loading && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -101,16 +124,19 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({
           </div>
         </div>
       )}
+
+      {/* Scrollable Container */}
       <div
         ref={pdfContainerRef}
-        className={`flex-1 rounded-lg overflow-auto p-4 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'} ${loading ? 'hidden' : ''}`}
+        className={`flex-1 overflow-y-auto p-4 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'} ${loading ? 'hidden' : ''}`}
         style={{ minHeight: '400px' }}
       >
-        {/* PDF content rendered here */}
+        {/* PDF pages rendered here */}
       </div>
-      {/* Open in Viewer button */}
+
+      {/* Open in Viewer button (optional footer) */}
       {!loading && shouldShowView && onOpenDocument && (
-        <div className={`flex items-center justify-center gap-4 mt-4 py-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
+        <div className={`flex items-center justify-center gap-4 py-3 shrink-0 ${isLight ? 'bg-gray-100' : 'bg-surface-tertiary'}`}>
           <button
             onClick={() => onOpenDocument(item)}
             className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${isLight ? 'bg-[#007aff] text-white hover:bg-[#0066d6]' : 'bg-primary text-white hover:bg-primary/80'}`}

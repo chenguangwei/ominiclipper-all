@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ResourceItem, ResourceType } from '../types';
 import Icon from './Icon';
 import DocxViewer from './DocxViewer';
+import PdfRenderer from './PreviewPane/renderers/PdfRenderer';
 import * as documentViewer from '../services/documentViewer';
 import { formatFileSize, getUsablePath, isElectron, readLocalFileAsDataUrl, recoverItemPath } from '../services/fileManager';
 
@@ -80,6 +81,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
   const [showToc, setShowToc] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [useNativeViewer, setUseNativeViewer] = useState(false);
+  const [pdfContent, setPdfContent] = useState<ArrayBuffer | null>(null);
 
   // Get usable path (handles embedded data)
   const rawDocumentPath = getUsablePath(item);
@@ -107,19 +109,22 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
       if (item.type === ResourceType.PDF) {
         setUseNativeViewer(true);
 
-        // Priority 1: Embedded data - convert to data URL
+        // Priority 1: Embedded data - convert to ArrayBuffer for PDF.js
         if (item.storageMode === 'embed' && item.embeddedData) {
-          console.log('Using embedded data URL for PDF');
-          // If already a data URL, use directly; otherwise convert base64 to data URL
-          const dataUrl = item.embeddedData.startsWith('data:')
-            ? item.embeddedData
-            : `data:application/pdf;base64,${item.embeddedData}`;
-          setResolvedPath(dataUrl);
+          console.log('Using embedded data for PDF');
+          // Decode base64 to ArrayBuffer
+          const binaryString = window.atob(item.embeddedData);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          setPdfContent(bytes.buffer);
           setIsLoading(false);
           return;
         }
 
-        // Priority 2: Local file in Electron - read as data URL
+        // Priority 2: Local file in Electron - read as ArrayBuffer
         if (isElectron()) {
           // Try localPath first
           let filePath = item.localPath;
@@ -134,14 +139,21 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
             }
           }
 
-          // If we have a valid file path (not blob/http), read it as data URL
-          if (filePath && !filePath.startsWith('http') && !filePath.startsWith('blob:') && !filePath.startsWith('data:')) {
-            console.log('Reading file as data URL from:', filePath);
-            const dataUrl = await readLocalFileAsDataUrl(filePath);
-            if (dataUrl) {
-              setResolvedPath(dataUrl);
-              setIsLoading(false);
-              return;
+          // If we have a valid file path, read it as ArrayBuffer
+          if (filePath && !filePath.startsWith('http') && !filePath.startsWith('blob:')) {
+            console.log('Reading file as ArrayBuffer from:', filePath);
+            try {
+              const result = await (window as any).electronAPI.fs.readFile(filePath);
+              if (result.success && result.buffer) {
+                // Electron sends buffer as Uint8Array/Buffer, convert to ArrayBuffer
+                // Note: result.buffer from IPC might be a Node Buffer, which matches Uint8Array
+                const buffer = result.buffer.buffer ? result.buffer.buffer : result.buffer;
+                setPdfContent(buffer);
+                setIsLoading(false);
+                return;
+              }
+            } catch (e) {
+              console.error('Failed to read local PDF:', e);
             }
           }
 
@@ -393,8 +405,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
             <button
               onClick={() => setShowToc(!showToc)}
               className={`p-1.5 rounded transition-colors ${showToc
-                  ? 'bg-primary text-white'
-                  : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                ? 'bg-primary text-white'
+                : 'hover:bg-white/10 text-slate-400 hover:text-white'
                 }`}
               title="Table of Contents"
             >
@@ -501,8 +513,19 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
             </div>
           )}
 
-          {/* Native PDF viewer using iframe (Chromium's built-in PDF viewer) */}
-          {useNativeViewer && resolvedPath && !error && (
+          {/* PDF Viewer using PdfRenderer (pdfjs-dist) */}
+          {item.type === ResourceType.PDF && !error && (
+            <PdfRenderer
+              item={item}
+              content={pdfContent}
+              loading={isLoading}
+              error={error}
+              colorMode="dark"
+            />
+          )}
+
+          {/* Iframe for other content (not currently used for PDF) */}
+          {useNativeViewer && resolvedPath && !error && item.type !== ResourceType.PDF && (
             <iframe
               ref={iframeRef}
               src={resolvedPath}
