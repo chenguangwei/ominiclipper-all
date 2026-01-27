@@ -3,6 +3,7 @@ import { ResourceItem, FilterState, FileStorageMode, ResourceType } from '@/type
 import * as storageService from '@/services/storageService';
 import * as itemMetaService from '@/services/itemMetadataService';
 import { extractContentSnippet } from '@/services/contentExtractionService';
+import { importSingleFile, classifyAndImportFile, BatchImportFile } from '@/services/batchImportService';
 
 // Helper types
 interface ScannedFile {
@@ -37,6 +38,8 @@ const hasFileStorageAPI = (): boolean => {
 
 export const useDragDrop = (
     setItems: (items: ResourceItem[]) => void,
+    setFolders: (folders: any[]) => void,
+    setTags: (tags: any[]) => void,
     filterState: FilterState,
     customStoragePath: string | null
 ) => {
@@ -193,261 +196,74 @@ export const useDragDrop = (
         const file = files[0];
         if (!file) return;
 
-        const electronFilePath = (file as any).path;
-        const type = getResourceTypeFromFile(file);
-        let path: string = '';
-        let localPath: string | undefined;
-        let embeddedData: string | undefined;
-        const originalPath = electronFilePath || file.name;
+        console.log('[useDragDrop] handleDropOnFolder called for file:', file.name);
 
-        // Check for Electron API availability
-        if (!isElectron()) {
-            showBrowserModeWarning('Browser mode: File will be embedded, not copied to storage.');
-        }
+        try {
+            // Use importSingleFile which handles storage (Scheme A support),
+            // but override classification to target the specific folder.
+            const result = await importSingleFile(file, {
+                storageMode: 'embed', // Or should we infer from settings? Defaulting to embed for now as per prior logic
+                useRules: false, // Force to specific folder
+                useAI: false,    // Force to specific folder
+                autoCreateFolders: false,
+                targetFolderId: folderId
+            });
 
-        // ALWAYS copy files to managed storage
-        if (electronFilePath && (window as any).electronAPI?.copyFileToStorage) {
-            try {
-                const result = await (window as any).electronAPI.copyFileToStorage(electronFilePath, file.name, customStoragePath);
-                if (result.success) {
-                    localPath = result.targetPath;
-                    path = result.targetPath;
-                    console.log('[useDragDrop] Folder drop - copied to storage:', path);
-                } else {
-                    throw new Error(result.error || 'Failed to copy file');
-                }
-            } catch (error) {
-                console.error('[useDragDrop] Failed to copy file to storage:', error);
-                showBrowserModeWarning(`Failed to copy file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                localPath = electronFilePath;
-                path = electronFilePath;
+            if (result.success) {
+                console.log('[useDragDrop] File dropped on folder successfully:', result.file.path);
+            } else {
+                console.error('[useDragDrop] Failed to drop file on folder:', result.error);
+                showBrowserModeWarning(`Import failed: ${result.error}`);
             }
-        } else if (!electronFilePath) {
-            // Browser upload - read content and save to disk
-            console.log('[useDragDrop] Folder drop - no file path, saving content to disk...');
-            try {
-                const buffer = await file.arrayBuffer();
-                let binary = '';
-                const bytes = new Uint8Array(buffer);
-                const len = bytes.byteLength;
-                for (let i = 0; i < len; i++) {
-                    binary += String.fromCharCode(bytes[i]);
-                }
-                const base64Data = btoa(binary);
 
-                // Save the file to disk via IPC
-                if ((window as any).electronAPI?.saveEmbeddedFile) {
-                    const result = await (window as any).electronAPI.saveEmbeddedFile(base64Data, file.name, null);
-                    if (result.success && result.targetPath) {
-                        localPath = result.targetPath;
-                        path = result.targetPath;
-                        console.log('[useDragDrop] Folder drop - browser file saved to disk:', path);
-                    }
-                } else {
-                    showBrowserModeWarning('Browser mode: File stored in embedded format only.');
-                }
-
-                // Also keep embedded data for quick access
-                embeddedData = base64Data;
-
-                // If save failed, at least we have embedded data
-                if (!localPath) {
-                    path = '';
-                    console.log('[useDragDrop] Folder drop - content embedded only, size:', len);
-                }
-            } catch (e) {
-                console.error('[useDragDrop] Failed to read/save file content:', e);
-                showBrowserModeWarning('Failed to process file. Using blob URL as fallback.');
-                path = URL.createObjectURL(file);
-            }
-        } else {
-            // Fallback: reference original path
-            localPath = electronFilePath;
-            path = electronFilePath;
+            await storageService.flushPendingWrites();
+            setItems([...storageService.getItems()]);
+        } catch (error) {
+            console.error('[useDragDrop] Exception dropping file on folder:', error);
+            showBrowserModeWarning(`Import exception: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-
-        // Extract content from the file for vector search indexing
-        let contentSnippet = `Added to folder`;
-        const filePathForExtraction = localPath || electronFilePath;
-        if (filePathForExtraction) {
-            try {
-                console.log('[useDragDrop] Extracting content for folder drop:', filePathForExtraction);
-                const extracted = await extractContentSnippet(type, filePathForExtraction, 500);
-                if (extracted && extracted.length > 10) {
-                    contentSnippet = extracted;
-                    console.log('[useDragDrop] Extracted content length:', extracted.length);
-                }
-            } catch (e) {
-                console.warn('[useDragDrop] Content extraction failed:', e);
-            }
-        }
-
-        const newItem = await storageService.addItem({
-            title: file.name.replace(/\.[^/.]+$/, ''),
-            type,
-            tags: [],
-            folderId: folderId,
-            color: 'tag-blue',
-            path,
-            localPath,
-            embeddedData,
-            originalPath,
-            storageMode: 'embed' as FileStorageMode,
-            fileSize: file.size,
-            mimeType: file.type,
-            isCloud: false,
-            isStarred: false,
-            contentSnippet,
-        });
-
-        await storageService.flushPendingWrites();
-        setItems([...storageService.getItems()]);
     };
 
     const handleFileDropConfirm = async (mode: FileStorageMode) => {
         if (!pendingDropFile) return;
-        const file = pendingDropFile;
-        const type = getResourceTypeFromFile(file);
-        let path: string = '';
-        let localPath: string | undefined;
-        let embeddedData: string | undefined;
-        const electronFilePath = (file as any).path;
-        const originalPath = electronFilePath || file.name;
 
-        // Detailed debug logging
         console.log('=== [useDragDrop] handleFileDropConfirm ===');
-        console.log('[useDragDrop] file.name:', file.name);
-        console.log('[useDragDrop] file.path (Electron):', electronFilePath);
-        console.log('[useDragDrop] file.size:', file.size);
-        console.log('[useDragDrop] mode:', mode);
-        console.log('[useDragDrop] isElectron():', isElectron());
-        console.log('[useDragDrop] electronAPI exists:', !!(window as any).electronAPI);
-        console.log('[useDragDrop] copyFileToStorage exists:', !!(window as any).electronAPI?.copyFileToStorage);
-        console.log('[useDragDrop] saveEmbeddedFile exists:', !!(window as any).electronAPI?.saveEmbeddedFile);
+        console.log('[useDragDrop] Calling importSingleFile with auto-classification');
 
-        // Check for Electron API availability
-        if (!isElectron()) {
-            console.warn('[useDragDrop] isElectron() returned false - showing browser warning');
-            showBrowserModeWarning('Browser mode: File will be embedded, not copied to persistent storage.');
-        }
+        try {
+            const specialFolders = ['all', 'recent', 'starred', 'uncategorized', 'untagged', 'trash'];
+            const targetFolderId = (filterState.folderId && !specialFolders.includes(filterState.folderId))
+                ? filterState.folderId : undefined;
 
-        // ALWAYS copy files to managed storage to ensure files are preserved
-        if (electronFilePath && (window as any).electronAPI?.copyFileToStorage) {
-            // Option A: Copy to managed storage (for Electron with file path)
-            try {
-                const result = await (window as any).electronAPI.copyFileToStorage(electronFilePath, file.name, customStoragePath);
-                if (result.success) {
-                    localPath = result.targetPath;
-                    path = result.targetPath;
-                    console.log('[useDragDrop] Copied to storage:', path);
-                } else {
-                    console.warn('[useDragDrop] Copy failed, falling back to reference:', result.error);
-                    showBrowserModeWarning(`Copy failed: ${result.error}. Using reference mode.`);
-                    localPath = electronFilePath;
-                    path = electronFilePath;
+            const result = await importSingleFile(pendingDropFile, {
+                storageMode: mode,
+                useRules: true,
+                useAI: true,
+                autoCreateFolders: true,
+                targetFolderId: targetFolderId
+            });
+
+            if (result.success) {
+                console.log('[useDragDrop] Import successful:', result.classification);
+                if (result.classification?.isAiclassified) {
+                    console.log('[useDragDrop] AI classified to:', result.classification.folderName);
                 }
-            } catch (e) {
-                console.error('[useDragDrop] Copy exception:', e);
-                showBrowserModeWarning(`Copy failed: ${e instanceof Error ? e.message : 'Unknown error'}. Using reference mode.`);
-                localPath = electronFilePath;
-                path = electronFilePath;
+            } else {
+                console.error('[useDragDrop] Import failed:', result.error);
+                if (browserModeWarning) {
+                    // If we are in browser mode fallback/warning state, we might need manual handling
+                    // But importSingleFile should handle gracefully or fail
+                }
             }
-        } else if (!electronFilePath) {
-            // Option B: No electron path (browser drag) - read content and save to disk
-            console.log('[useDragDrop] No file path, reading content and saving to disk...');
-            try {
-                const buffer = await file.arrayBuffer();
-                // Convert to base64
-                let binary = '';
-                const bytes = new Uint8Array(buffer);
-                const len = bytes.byteLength;
-                for (let i = 0; i < len; i++) {
-                    binary += String.fromCharCode(bytes[i]);
-                }
-                const base64Data = btoa(binary);
-
-                // Save the file to disk via IPC
-                if ((window as any).electronAPI?.saveEmbeddedFile) {
-                    const result = await (window as any).electronAPI.saveEmbeddedFile(base64Data, file.name, null);
-                    if (result.success && result.targetPath) {
-                        localPath = result.targetPath;
-                        path = result.targetPath;
-                        console.log('[useDragDrop] Browser file saved to disk:', path);
-                    }
-                } else {
-                    showBrowserModeWarning('Browser mode: File stored in embedded format only (data will be lost on restart).');
-                }
-
-                // Also keep embedded data for embed mode (for quick access without disk read)
-                if (mode === 'embed') {
-                    embeddedData = base64Data;
-                }
-
-                // If save failed, keep embedded data as fallback
-                if (!localPath) {
-                    embeddedData = base64Data;
-                    path = '';
-                    console.log('[useDragDrop] Content embedded only (no disk save), size:', len);
-                }
-            } catch (e) {
-                console.error('[useDragDrop] Failed to read/save file content:', e);
-                showBrowserModeWarning('Failed to process file. Using blob URL as fallback (will expire on restart).');
-                // Last resort - blob URL will expire on restart
-                path = URL.createObjectURL(file);
-            }
-        } else {
-            // Fallback: reference original path
-            localPath = electronFilePath;
-            path = electronFilePath;
+        } catch (error) {
+            console.error('[useDragDrop] Import exception:', error);
+            showBrowserModeWarning(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-
-        const specialFolders = ['all', 'recent', 'starred', 'uncategorized', 'untagged', 'trash'];
-        const targetFolderId = (!specialFolders.includes(filterState.folderId) && filterState.folderId !== 'all')
-            ? filterState.folderId : undefined;
-
-        // Extract content from the file for vector search indexing
-        let contentSnippet = `Imported from ${file.name}`;
-        const filePathForExtraction = localPath || electronFilePath;
-        if (filePathForExtraction) {
-            try {
-                console.log('[useDragDrop] Extracting content from:', filePathForExtraction);
-                const extracted = await extractContentSnippet(type, filePathForExtraction, 500);
-                if (extracted && extracted.length > 10) {
-                    contentSnippet = extracted;
-                    console.log('[useDragDrop] Extracted content length:', extracted.length);
-                }
-            } catch (e) {
-                console.warn('[useDragDrop] Content extraction failed:', e);
-            }
-        }
-
-        // Log the final values before saving
-        console.log('=== [useDragDrop] Saving item to storage ===');
-        console.log('[useDragDrop] Final path:', path);
-        console.log('[useDragDrop] Final localPath:', localPath);
-        console.log('[useDragDrop] Final originalPath:', originalPath);
-        console.log('[useDragDrop] Has embeddedData:', !!embeddedData, embeddedData ? `(${embeddedData.length} chars)` : '');
-
-        await storageService.addItem({
-            title: file.name.replace(/\.[^/.]+$/, ''),
-            type,
-            tags: [],
-            folderId: targetFolderId,
-            color: 'tag-blue',
-            path,
-            localPath,
-            embeddedData,
-            originalPath,
-            storageMode: mode,
-            fileSize: file.size,
-            mimeType: file.type,
-            isCloud: false,
-            isStarred: false,
-            contentSnippet
-        });
 
         await storageService.flushPendingWrites();
         setItems([...storageService.getItems()]);
+        setFolders([...storageService.getFolders()]); // Sync folders
+        setTags([...storageService.getTags()]);       // Sync tags
         setPendingDropFile(null);
         setIsFileDropDialogOpen(false);
     };
@@ -458,59 +274,47 @@ export const useDragDrop = (
     };
 
     const handleFolderDropConfirm = async (files: ScannedFile[], mode: FileStorageMode, classifications?: FileClassification[]) => {
-        // Iterate files and add them to storage
+        // Prepare storage service data for synchronous access
+        const folders = storageService.getFolders();
+        const tags = storageService.getTags();
+
+        // Iterate files and add them to storage using consistent batch import logic
         for (const file of files) {
-            const type = getResourceTypeFromExtension(file.extension);
-            let path = file.path;
-            let localPath: string | undefined = file.path; // Set localPath for Reveal in Finder support
+            try {
+                // Map ScannedFile to BatchImportFile
+                const batchFile: BatchImportFile = {
+                    name: file.name,
+                    path: file.path,
+                    extension: file.extension,
+                    size: file.size,
+                    mimeType: file.mimeType,
+                    modifiedAt: file.modifiedAt
+                };
 
-            // ALWAYS copy files to managed storage (not just for embed mode)
-            if (path && (window as any).electronAPI?.copyFileToStorage) {
-                try {
-                    const result = await (window as any).electronAPI.copyFileToStorage(path, file.name, customStoragePath);
-                    if (result.success) {
-                        localPath = result.targetPath;
-                        path = result.targetPath;
-                        console.log('[useDragDrop] Batch import - copied to storage:', path);
-                    }
-                } catch (e) {
-                    console.warn('[useDragDrop] Batch import - copy failed, using reference:', e);
-                }
+                // Use classifyAndImportFile from batch service
+                // This handles Scheme A storage (ID based), content extraction, etc.
+                await classifyAndImportFile(batchFile, folders, tags, {
+                    storageMode: mode,
+                    useRules: true, // Allow rules? Maybe yes, for tags.
+                    useAI: false,   // Maybe disable AI for speed if just dropping folder? Or user expects it. 
+                    // "Folder Drop" usually implies "Import this folder structure".
+                    // But here we are just importing flat list of files from drag-drop.
+                    // Let's keep rules on, AI off for speed unless asked.
+                    autoCreateFolders: false, // Don't create random folders, unless we want to recreate source structure (which we don't have here easily)
+                    targetFolderId: undefined // Or use pendingDropFolder logic if it was a target drop? 
+                    // Actually this function is called when dropping A FOLDER from OS.
+                    // Usually users expect the items to just be added.
+                });
+
+            } catch (e) {
+                console.error('[useDragDrop] Failed to import file from folder drop:', file.name, e);
             }
-
-            // Extract content from the file for vector search indexing
-            let contentSnippet = 'Batch imported';
-            if (path) {
-                try {
-                    console.log('[useDragDrop] Extracting content for batch import:', path);
-                    const extracted = await extractContentSnippet(type, path, 500);
-                    if (extracted && extracted.length > 10) {
-                        contentSnippet = extracted;
-                    }
-                } catch (e) {
-                    console.warn('[useDragDrop] Content extraction failed for:', file.name, e);
-                }
-            }
-
-            await storageService.addItem({
-                title: file.name,
-                type,
-                tags: [],
-                folderId: undefined, // Or use subfolders
-                color: 'tag-blue',
-                path,
-                localPath, // Add localPath for Reveal in Finder
-                originalPath: file.path, // Store original path for reference
-                storageMode: mode,
-                fileSize: file.size,
-                mimeType: file.mimeType,
-                contentSnippet,
-                isCloud: false,
-                isStarred: false
-            });
         }
+
         await storageService.flushPendingWrites();
         setItems([...storageService.getItems()]);
+        setFolders([...storageService.getFolders()]); // Sync folders
+        setTags([...storageService.getTags()]);       // Sync tags
         setPendingDropFolder(null);
         setIsFolderDropDialogOpen(false);
     };

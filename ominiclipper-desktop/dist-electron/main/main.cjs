@@ -462,6 +462,23 @@ function registerIPCHandlers() {
       return { success: false, error: error.message };
     }
   });
+  ipcMain.handle("fs:importFileToIdStorage", async (event, sourcePath, itemId) => {
+    try {
+      const paths = getFileStoragePaths();
+      const itemDir = path.join(paths.files, itemId);
+      if (!fs.existsSync(itemDir)) {
+        fs.mkdirSync(itemDir, { recursive: true });
+      }
+      const fileName = path.basename(sourcePath).normalize("NFC");
+      const targetPath = path.join(itemDir, fileName);
+      fs.copyFileSync(sourcePath, targetPath);
+      console.log("Imported file to ID storage:", targetPath);
+      return { success: true, targetPath, fileName };
+    } catch (error) {
+      console.error("fs:importFileToIdStorage error:", error);
+      return { success: false, error: error.message };
+    }
+  });
   ipcMain.handle("dialog:selectDirectory", async (event, title = "Select Storage Directory") => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title,
@@ -611,11 +628,14 @@ function registerIPCHandlers() {
       }
       return null;
     };
+    if (fileName) {
+      const directPath = path.join(itemDir, fileName);
+      if (fs.existsSync(directPath)) return directPath;
+    }
     const eaglePath = findFileInDir(itemDir, fileName);
     if (eaglePath) return eaglePath;
     const legacyPath = findFileInDir(legacyStoragePath, fileName);
     if (legacyPath) {
-      console.log(`[getFilePath] Found file in legacy storage: ${legacyPath}`);
       return legacyPath;
     }
     try {
@@ -626,7 +646,6 @@ function registerIPCHandlers() {
         );
         if (idMatch) {
           const foundPath = path.join(legacyStoragePath, idMatch);
-          console.log(`[getFilePath] Found by ID pattern: ${foundPath}`);
           return foundPath;
         }
         if (fileName && !fileName.includes(".")) {
@@ -635,7 +654,6 @@ function registerIPCHandlers() {
             const withExt = fileName + ext;
             const withExtPath = path.join(legacyStoragePath, withExt);
             if (fs.existsSync(withExtPath)) {
-              console.log(`[getFilePath] Found with extension: ${withExtPath}`);
               return withExtPath;
             }
           }
@@ -653,7 +671,6 @@ function registerIPCHandlers() {
             const folderPath = path.join(foldersPath, dir.name);
             const foundPath = findFileInDir(folderPath, fileName);
             if (foundPath) {
-              console.log(`[getFilePath] Found in folders directory: ${foundPath}`);
               return foundPath;
             }
           }
@@ -662,7 +679,6 @@ function registerIPCHandlers() {
     } catch (e) {
       console.warn("[getFilePath] Folders scan failed:", e);
     }
-    console.log(`[getFilePath] File not found for item ${itemId}, fileName: ${fileName}`);
     return null;
   });
   ipcMain.handle("fileStorage:deleteItemStorage", async (event, itemId) => {

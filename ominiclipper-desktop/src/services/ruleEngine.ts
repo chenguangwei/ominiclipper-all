@@ -605,7 +605,7 @@ export const classifyFile = async (
       category: result.rule.name,
       subfolder: result.rule.action.targetFolder || '',
       confidence: result.confidence || 1.0,
-      reasoning: result.rule.description || `Matched rule: ${result.rule.name}`,
+      reasoning: `Auto-classified by rule: ${result.rule.name}`,
       suggestedTags: result.suggestedTags || result.rule.action.tags || [],
     };
   }

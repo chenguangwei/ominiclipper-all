@@ -542,6 +542,69 @@ function registerIPCHandlers() {
     }
   });
 
+  // Export file to external destination
+  ipcMain.handle('fs:exportFile', async (event, sourcePath, targetDir, targetFileName) => {
+    try {
+      if (!fs.existsSync(sourcePath)) {
+        return { success: false, error: `Source file not found: ${sourcePath}` };
+      }
+
+      // Ensure target directory exists
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Safe filename
+      const safeFileName = (targetFileName || path.basename(sourcePath)).normalize('NFC');
+
+      // Handle duplicates by appending number
+      let targetPath = path.join(targetDir, safeFileName);
+      let counter = 1;
+      const ext = path.extname(safeFileName);
+      const baseName = path.basename(safeFileName, ext);
+
+      while (fs.existsSync(targetPath)) {
+        targetPath = path.join(targetDir, `${baseName} (${counter})${ext}`);
+        counter++;
+      }
+
+      fs.copyFileSync(sourcePath, targetPath);
+      console.log('Exported file to:', targetPath);
+
+      return { success: true, path: targetPath };
+    } catch (error) {
+      console.error('fs:exportFile error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Import file to ID-based storage (Scheme A)
+  // Import file to ID-based storage (Scheme A)
+  ipcMain.handle('fs:importFileToIdStorage', async (event, sourcePath, itemId) => {
+    try {
+      const paths = getFileStoragePaths();
+      const itemDir = path.join(paths.files, itemId);
+
+      if (!fs.existsSync(itemDir)) {
+        fs.mkdirSync(itemDir, { recursive: true });
+      }
+
+      // Normalize filename to avoid encoding issues
+      const fileName = path.basename(sourcePath).normalize('NFC');
+      const targetPath = path.join(itemDir, fileName);
+
+      // Copy file
+      fs.copyFileSync(sourcePath, targetPath);
+      console.log('Imported file to ID storage:', targetPath);
+
+      // Return relative path for portability if needed, but absolute is fine for now as getFilePath handles it
+      return { success: true, targetPath: targetPath, fileName: fileName };
+    } catch (error) {
+      console.error('fs:importFileToIdStorage error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Select storage directory
   ipcMain.handle('dialog:selectDirectory', async (event, title = 'Select Storage Directory') => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -740,13 +803,20 @@ function registerIPCHandlers() {
     // --- 查找逻辑开始 ---
 
     // 1. 优先检查 Eagle 风格目录: files/{id}/{name}
+    // Optimization: Directly check the most likely path first without scanning
+    if (fileName) {
+      const directPath = path.join(itemDir, fileName);
+      if (fs.existsSync(directPath)) return directPath;
+    }
+
+    // Then try scanning the item folder for loose matches or other files
     const eaglePath = findFileInDir(itemDir, fileName);
     if (eaglePath) return eaglePath;
 
     // 2. 如果找不到，回退检查旧的 documents 目录: documents/{name}
     const legacyPath = findFileInDir(legacyStoragePath, fileName);
     if (legacyPath) {
-      console.log(`[getFilePath] Found file in legacy storage: ${legacyPath}`);
+      // console.log(`[getFilePath] Found file in legacy storage: ${legacyPath}`);
       return legacyPath;
     }
 
@@ -762,7 +832,7 @@ function registerIPCHandlers() {
         );
         if (idMatch) {
           const foundPath = path.join(legacyStoragePath, idMatch);
-          console.log(`[getFilePath] Found by ID pattern: ${foundPath}`);
+          // console.log(`[getFilePath] Found by ID pattern: ${foundPath}`);
           return foundPath;
         }
 
@@ -773,7 +843,7 @@ function registerIPCHandlers() {
             const withExt = fileName + ext;
             const withExtPath = path.join(legacyStoragePath, withExt);
             if (fs.existsSync(withExtPath)) {
-              console.log(`[getFilePath] Found with extension: ${withExtPath}`);
+              // console.log(`[getFilePath] Found with extension: ${withExtPath}`);
               return withExtPath;
             }
           }
@@ -793,7 +863,7 @@ function registerIPCHandlers() {
             const folderPath = path.join(foldersPath, dir.name);
             const foundPath = findFileInDir(folderPath, fileName);
             if (foundPath) {
-              console.log(`[getFilePath] Found in folders directory: ${foundPath}`);
+              // console.log(`[getFilePath] Found in folders directory: ${foundPath}`);
               return foundPath;
             }
           }
@@ -804,7 +874,7 @@ function registerIPCHandlers() {
     }
 
     // 5. 还是找不到，返回 null（不再返回无效路径）
-    console.log(`[getFilePath] File not found for item ${itemId}, fileName: ${fileName}`);
+    // console.log(`[getFilePath] File not found for item ${itemId}, fileName: ${fileName}`);
     return null;
   });
 

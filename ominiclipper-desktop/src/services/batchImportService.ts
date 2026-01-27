@@ -9,6 +9,7 @@ import * as storageService from './storageService';
 import * as ruleEngine from './ruleEngine';
 import aiClassifier from './aiClassifier';
 import * as contentExtraction from './contentExtractionService';
+import { saveItemMetadata } from './fileStorageService';
 
 // Check if running in Electron
 function isElectron(): boolean {
@@ -55,6 +56,7 @@ export interface BatchImportOptions {
   useAI: boolean;           // Use AI classification
   autoCreateFolders: boolean; // Auto-create folders from classification
   targetFolderId?: string;  // Override target folder
+  skipFileStorage?: boolean; // Skip copying/embedding file (if already handled)
   onProgress?: (progress: BatchImportProgress) => void;
 }
 
@@ -152,7 +154,7 @@ export const batchImport = async (
 /**
  * Classify a single file and import it
  */
-const classifyAndImportFile = async (
+export const classifyAndImportFile = async (
   file: BatchImportFile,
   folders: Folder[],
   tags: Tag[],
@@ -169,21 +171,34 @@ const classifyAndImportFile = async (
       classification = await ruleEngine.classifyFile(file.name, file.path, type);
 
       // If high-confidence rule match, skip AI
-      if (classification && classification.confidence >= 0.9) {
+      if (classification) {
         console.log(`[BatchImport] Rule match for ${file.name}: ${classification.category}`);
       }
     }
 
-    // Step 2: If no rule match or low confidence, use AI
-    if (options.useAI && (!classification || classification.confidence < 0.8)) {
-      // Extract content for AI classification
-      const contentSnippet = await contentExtraction.extractContentSnippet(
+    // Always try to extract content snippet if possible, regardless of classification method
+    // This ensures we have actual content for search/display, not just the rule description
+    let contentSnippet = '';
+    try {
+      const extracted = await contentExtraction.extractContentSnippet(
         type,
         file.path,
         500
       );
+      if (extracted && extracted.length > 10) {
+        contentSnippet = extracted;
+      }
+    } catch (e) {
+      console.warn(`[BatchImport] Content extraction failed for ${file.name}:`, e);
+    }
 
-      // Call AI classifier
+    // Step 2: If no rule match or low confidence OR missing tags, use AI
+    // We want AI to enrich tags even if Rule Engine found a folder
+    const ruleHasTags = classification?.suggestedTags && classification.suggestedTags.length > 0;
+    const ruleHighConfidence = classification && classification.confidence >= 0.8;
+
+    if (options.useAI && (!classification || !ruleHighConfidence || !ruleHasTags)) {
+      // Call AI classifier with the extracted content
       const aiResult = await aiClassifier.classify({
         id: 'temp',
         title: file.name.replace(/\.[^/.]+$/, ''),
@@ -205,16 +220,40 @@ const classifyAndImportFile = async (
       });
 
       if (aiResult) {
-        // Merge AI result with rule result (AI takes precedence)
+        // Merge AI result with rule result
+        // Logic: Rule Folder wins if High Confidence. AI Tags add to Rule Tags.
+
+        // Determine base values (Rule or existing)
+        const baseCategory = classification?.category || '';
+        const baseSubfolder = classification?.subfolder || '';
+        const baseReasoning = classification?.reasoning || '';
+        const baseTags = classification?.suggestedTags || [];
+
+        // Determine final folder
+        // If Rule was high confidence and found a folder, keep it. Otherwise AI overrides.
+        const finalSubfolder = (ruleHighConfidence && baseSubfolder)
+          ? baseSubfolder
+          : (aiResult.subfolder || baseSubfolder);
+
+        // Merge tags (Set union)
+        const finalTags = [...new Set([...baseTags, ...(aiResult.suggestedTags || [])])];
+
+        // Add category as a tag if it exists and is not generic
+        if (aiResult.category && aiResult.category !== 'Uncategorized' && aiResult.category !== '未分类') {
+          finalTags.push(aiResult.category);
+        }
+
         classification = {
-          category: aiResult.category || classification?.category || '',
-          subfolder: aiResult.subfolder || classification?.subfolder || '',
-          confidence: aiResult.confidence || classification?.confidence || 0.5,
-          reasoning: aiResult.reasoning || classification?.reasoning || '',
-          suggestedTags: aiResult.suggestedTags || classification?.suggestedTags || [],
+          category: aiResult.category || baseCategory,
+          subfolder: finalSubfolder,
+          suggestedTags: finalTags,
+          confidence: Math.max(aiResult.confidence || 0, classification?.confidence || 0),
+          reasoning: aiResult.reasoning
+            ? `${aiResult.reasoning} ${baseReasoning ? `(Rule: ${baseReasoning})` : ''}`
+            : baseReasoning,
         };
         isAiclassified = true;
-        console.log(`[BatchImport] AI classification for ${file.name}: ${aiResult.category}`);
+        console.log(`[BatchImport] AI classification enriched: ${file.name}`);
       }
     }
 
@@ -268,35 +307,47 @@ const classifyAndImportFile = async (
       }
     }
 
-    // Step 5: Copy file to storage if needed
+    // Step 5: ID-based Storage (Scheme A)
+    // We generate ID first to determine storage path
+    const itemId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     let localPath: string | undefined;
     let finalPath: string | undefined;
 
-    if (options.storageMode === 'embed' && isElectron()) {
+    // Default to file.path
+    localPath = file.path;
+    finalPath = file.path;
+
+    if (!options.skipFileStorage && isElectron()) {
       try {
-        const copyResult = await (window as any).electronAPI.copyFileToStorage(
-          file.path,
-          file.name
-        );
-        if (copyResult.success) {
-          localPath = copyResult.targetPath;
-          finalPath = copyResult.targetPath;
-        } else {
-          localPath = file.path;
-          finalPath = file.path;
+        const api = (window as any).electronAPI;
+        // Scheme A: Use ID-based storage if available
+        if (api.importFileToIdStorage) {
+          const result = await api.importFileToIdStorage(file.path, itemId);
+          if (result.success) {
+            localPath = result.targetPath;
+            finalPath = result.targetPath;
+          } else {
+            console.error('[BatchImport] ID storage import failed:', result.error);
+            // Fallback to legacy behavior if ID storage fails? 
+            // Better to keep original path than fail completely, or try legacy.
+          }
+        } else if (api.copyFileToStorage) {
+          // Fallback to legacy flat storage
+          const copyResult = await api.copyFileToStorage(file.path, file.name);
+          if (copyResult.success) {
+            localPath = copyResult.targetPath;
+            finalPath = copyResult.targetPath;
+          }
         }
       } catch (error) {
-        console.error('[BatchImport] Failed to copy file:', error);
-        localPath = file.path;
-        finalPath = file.path;
+        console.error('[BatchImport] File storage operation failed:', error);
       }
-    } else {
-      localPath = file.path;
-      finalPath = file.path;
     }
 
     // Step 6: Add item to storage
-    const newItem = storageService.addItem({
+    const newItem = await storageService.addItem({
+      id: itemId, // Pass the pre-generated ID
       title: file.name.replace(/\.[^/.]+$/, ''),
       type,
       tags: itemTags,
@@ -311,8 +362,36 @@ const classifyAndImportFile = async (
       mimeType: file.mimeType,
       isCloud: false,
       isStarred: false,
-      contentSnippet: classification?.reasoning || `Imported from ${file.name}`,
+
+      contentSnippet: contentSnippet || classification?.reasoning || `Imported from ${file.name}`,
     });
+
+    // Step 7: Save metadata.json to ID storage (Scheme A)
+    if (finalPath && isElectron()) {
+      try {
+        const now = Date.now();
+        const ext = file.name.split('.').pop() || '';
+        const metadata = {
+          id: itemId,
+          name: newItem.title,
+          type: type as any,
+          size: file.size,
+          btime: now,
+          mtime: now,
+          ext: ext,
+          tags: itemTags,
+          folders: targetFolderId ? [targetFolderId] : [],
+          color: 'tag-blue',
+          starred: false,
+          description: newItem.contentSnippet,
+          modificationTime: now,
+        };
+        await saveItemMetadata(itemId, metadata);
+        console.log('[BatchImport] Saved metadata.json for item:', itemId);
+      } catch (err) {
+        console.error('[BatchImport] Failed to save metadata.json:', err);
+      }
+    }
 
     return {
       success: true,
@@ -443,4 +522,78 @@ export const getImportStats = (results: BatchImportResult[]): {
   }
 
   return stats;
+};
+// ============================================
+// Single File Import
+// ============================================
+
+/**
+ * Single file import wrapper for Drag and Drop
+ */
+export const importSingleFile = async (
+  file: File,
+  options: BatchImportOptions
+): Promise<BatchImportResult> => {
+  const isAbsolutePath = (path: string) => {
+    return path && (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path));
+  };
+
+  let filePath = (file as any).path || file.name;
+  let skipFileStorage = false;
+
+  // If path is not absolute (e.g. browser drag or restricted Electron file object),
+  // we must save the content manually first.
+  if (!isAbsolutePath(filePath) && (window as any).electronAPI?.saveEmbeddedFile) {
+    console.log('[BatchImport] Invalid file path detected, saving content manually:', filePath);
+    try {
+      const buffer = await file.arrayBuffer();
+      const binary = new Uint8Array(buffer);
+      // Convert to base64 for IPC
+      let binaryString = '';
+      for (let i = 0; i < binary.length; i++) {
+        binaryString += String.fromCharCode(binary[i]);
+      }
+      const base64Data = btoa(binaryString);
+
+      const saveResult = await (window as any).electronAPI.saveEmbeddedFile(
+        base64Data,
+        file.name,
+        null // No ID yet
+      );
+
+      if (saveResult.success && saveResult.targetPath) {
+        console.log('[BatchImport] Content saved manually to:', saveResult.targetPath);
+        filePath = saveResult.targetPath;
+        // We saved it to a temporary location (documents), now let classifyAndImportFile move/copy it to the correct ID folder
+        // skipFileStorage = true; // CHANGED: Do not skip, so it gets copied to files/{id}
+      } else {
+        console.error('[BatchImport] Failed to save manual content:', saveResult.error);
+      }
+    } catch (e) {
+      console.error('[BatchImport] Exception saving manual content:', e);
+    }
+  }
+
+  // 1. Convert File to BatchImportFile structure
+  const batchFile: BatchImportFile = {
+    name: file.name,
+    path: filePath,
+    extension: `.${file.name.split('.').pop() || ''}`,
+    size: file.size,
+    mimeType: file.type,
+    modifiedAt: new Date(file.lastModified).toISOString()
+  };
+
+  // 2. Refresh folders and tags
+  // storageService getters are synchronous and return in-memory state
+  const existingFolders = storageService.getFolders();
+  const existingTags = storageService.getTags();
+
+  // 3. Call internal classification logic
+  return classifyAndImportFile(
+    batchFile,
+    existingFolders,
+    existingTags,
+    { ...options, skipFileStorage }
+  );
 };

@@ -23,10 +23,10 @@ export const saveItems = (items: ResourceItem[]): void => {
     }
 };
 
-export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<ResourceItem> => {
+export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): Promise<ResourceItem> => {
     const newItem: ResourceItem = {
         ...item,
-        id: generateId(),
+        id: item.id || generateId(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
     };

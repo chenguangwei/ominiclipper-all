@@ -144,16 +144,28 @@ export async function importFile(
     // Read file as base64 and save to storage
     let savedPath = '';
     if (isElectron()) {
-      const readResult = await (window as any).electronAPI.readFileAsDataUrl(sourcePath);
-      if (!readResult.success) {
-        return { success: false, error: readResult.error };
-      }
+      const api = (window as any).electronAPI;
 
-      const saveResult = await saveFileToStorage(itemId, fileName, readResult.dataUrl.split(',')[1]);
-      if (!saveResult.success) {
-        return { success: false, error: saveResult.error };
+      // Scheme A: Use ID-based storage if available
+      if (api.importFileToIdStorage) {
+        const result = await api.importFileToIdStorage(sourcePath, itemId);
+        if (!result.success) {
+          return { success: false, error: result.error };
+        }
+        savedPath = result.targetPath || '';
+      } else {
+        // Fallback or legacy manual read/write
+        const readResult = await api.readFileAsDataUrl(sourcePath);
+        if (!readResult.success) {
+          return { success: false, error: readResult.error };
+        }
+
+        const saveResult = await saveFileToStorage(itemId, fileName, readResult.dataUrl.split(',')[1]);
+        if (!saveResult.success) {
+          return { success: false, error: saveResult.error };
+        }
+        savedPath = saveResult.path || '';
       }
-      savedPath = saveResult.path || '';
     }
 
     // Create metadata

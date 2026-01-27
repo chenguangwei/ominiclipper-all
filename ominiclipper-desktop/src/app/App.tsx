@@ -97,7 +97,7 @@ const App: React.FC = () => {
   );
 
   // 5. Drag & Drop
-  const dnd = useDragDrop(setItems, filterState, customStoragePath);
+  const dnd = useDragDrop(setItems, setFolders, setTags, filterState, customStoragePath);
 
   // 6. Data Integrity (Startup Scan)
   // Only run when storage is ready and we have items

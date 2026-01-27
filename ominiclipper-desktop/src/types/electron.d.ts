@@ -16,6 +16,8 @@ declare global {
             scanDirectory: (dirPath: string, options?: any) => Promise<{ success: boolean; files?: any[]; error?: string }>;
             copyFileToStorage: (sourcePath: string, targetFileName: string, customStoragePath?: string | null) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
             saveEmbeddedFile: (base64Data: string, fileName: string, itemId: string | null) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
+            importFileToIdStorage: (sourcePath: string, itemId: string) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
+            exportFile: (sourcePath: string, targetDir: string, targetFileName: string) => Promise<{ success: boolean; path?: string; error?: string }>;
 
             // Shell operations
             openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;

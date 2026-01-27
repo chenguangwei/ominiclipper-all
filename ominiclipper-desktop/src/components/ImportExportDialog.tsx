@@ -6,6 +6,7 @@
 import React, { useState, useRef } from 'react';
 import Icon from './Icon';
 import * as storageService from '../services/storageService';
+import { exportToStructuredFolder } from '../services/exportService';
 
 interface ImportExportDialogProps {
   isOpen: boolean;
@@ -73,6 +74,50 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
       setMessage({ type: 'success', text: t('msg.exportSuccess') });
     } catch (e) {
       setMessage({ type: 'error', text: t('error.unknown') });
+    }
+  };
+
+  const handleFolderExport = async () => {
+    try {
+      const electronAPI = (window as any).electronAPI;
+      if (!electronAPI || !electronAPI.selectDirectory) {
+        setMessage({ type: 'error', text: 'Directory selection not supported' });
+        return;
+      }
+
+      // 1. Select destination
+      const result = await electronAPI.selectDirectory('Select Content Export Directory');
+      if (!result.success || !result.path) return; // Cancelled
+
+      const targetDir = result.path;
+      setMessage({ type: 'success', text: 'Exporting... please wait.' });
+
+      // 2. Prepare data
+      const items = storageService.getItems();
+      const folders = storageService.getFolders();
+      const tags = storageService.getTags();
+
+      // 3. Execute export
+      const exportResult = await exportToStructuredFolder(
+        targetDir,
+        items,
+        folders,
+        tags,
+        (current, total, filename) => {
+          // Optional: could update a progress bar state here
+          console.log(`Exporting ${current}/${total}: ${filename}`);
+        }
+      );
+
+      if (exportResult.success) {
+        setMessage({ type: 'success', text: `Successfully exported ${exportResult.count} files to ${targetDir}` });
+      } else {
+        setMessage({ type: 'error', text: `Export completed with ${exportResult.errors.length} errors. Check console.` });
+        console.error('Export errors:', exportResult.errors);
+      }
+    } catch (e: any) {
+      console.error(e);
+      setMessage({ type: 'error', text: 'Export failed: ' + e.message });
     }
   };
 
@@ -146,16 +191,16 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
     if (files && files.length > 0) {
       const file = files[0];
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const content = event.target?.result as string;
           const stats = storageService.getImportStats(content);
           if (stats) {
-            const importedCount = storageService.importFromBrowserExtension(content);
-            if (importedCount > 0) {
+            const result = await storageService.importFromBrowserExtension(content);
+            if (result) {
               setMessage({
                 type: 'success',
-                text: `Successfully synced ${importedCount} new items from browser extension!`
+                text: `Successfully synced new item from browser extension!`
               });
               setTimeout(() => {
                 window.location.reload();
@@ -163,7 +208,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
             } else {
               setMessage({
                 type: 'success',
-                text: 'All items are already synced. No new items to import.'
+                text: 'No new items imported.'
               });
             }
           } else {
@@ -206,21 +251,19 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
         {/* Tabs */}
         <div className="flex border-b border-white/5">
           <button
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-              mode === 'export'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${mode === 'export'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-slate-400 hover:text-slate-200'
+              }`}
             onClick={() => { setMode('export'); setMessage(null); setImportFile(null); }}
           >
             {t('action.export')}
           </button>
           <button
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-              mode === 'import'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${mode === 'import'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-slate-400 hover:text-slate-200'
+              }`}
             onClick={() => { setMode('import'); setMessage(null); }}
           >
             {t('action.import')}
@@ -239,24 +282,35 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
                 <label className="block text-xs text-slate-500 mb-2">Format</label>
                 <div className="flex gap-2">
                   <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      exportFormat === 'json'
-                        ? 'bg-primary/20 text-primary border border-primary/50'
-                        : 'bg-[#2a2a2a] text-slate-400 border border-transparent hover:bg-[#333]'
-                    }`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${exportFormat === 'json'
+                      ? 'bg-primary/20 text-primary border border-primary/50'
+                      : 'bg-[#2a2a2a] text-slate-400 border border-transparent hover:bg-[#333]'
+                      }`}
                     onClick={() => setExportFormat('json')}
                   >
-                    JSON
+                    JSON (Backup)
                   </button>
                   <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      exportFormat === 'csv'
-                        ? 'bg-primary/20 text-primary border border-primary/50'
-                        : 'bg-[#2a2a2a] text-slate-400 border border-transparent hover:bg-[#333]'
-                    }`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${exportFormat === 'csv'
+                      ? 'bg-primary/20 text-primary border border-primary/50'
+                      : 'bg-[#2a2a2a] text-slate-400 border border-transparent hover:bg-[#333]'
+                      }`}
                     onClick={() => setExportFormat('csv')}
                   >
-                    CSV
+                    CSV (Excel)
+                  </button>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <p className="text-sm text-slate-400 mb-3">
+                    Or export raw files organized by folder:
+                  </p>
+                  <button
+                    onClick={handleFolderExport}
+                    className="w-full py-2.5 rounded-lg bg-[#2a2a2a] text-slate-300 font-medium hover:bg-[#333] transition-colors flex items-center justify-center gap-2 border border-white/5"
+                  >
+                    <Icon name="folder_open" className="text-[18px]" />
+                    Export as Folder Structure
                   </button>
                 </div>
               </div>
@@ -266,7 +320,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
                 className="w-full py-2.5 rounded-lg bg-primary text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
               >
                 <Icon name="download" className="text-[18px]" />
-                {t('action.export')}
+                {t('action.export')} ({exportFormat.toUpperCase()})
               </button>
             </div>
           ) : (
@@ -298,11 +352,10 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
                 Or import from a backup file:
               </p>
               <div
-                className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-                  isDragOver
-                    ? 'border-primary bg-primary/10'
-                    : 'border-white/10 hover:border-white/20'
-                }`}
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${isDragOver
+                  ? 'border-primary bg-primary/10'
+                  : 'border-white/10 hover:border-white/20'
+                  }`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -358,11 +411,10 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
 
           {/* Message */}
           {message && (
-            <div className={`mt-4 p-3 rounded-lg text-sm flex items-center gap-2 ${
-              message.type === 'success'
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                : 'bg-red-500/20 text-red-400 border border-red-500/30'
-            }`}>
+            <div className={`mt-4 p-3 rounded-lg text-sm flex items-center gap-2 ${message.type === 'success'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+              }`}>
               <Icon name={message.type === 'success' ? 'check_circle' : 'error'} className="text-[18px]" />
               {message.text}
             </div>
