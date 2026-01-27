@@ -12,31 +12,31 @@ import {
 import llmProviderService from './llmProvider';
 
 // 分类 Prompt 模板
-const CLASSIFICATION_PROMPT = `你是一个智能文件分类助手。请分析以下文件信息并进行分类。
+const CLASSIFICATION_PROMPT = `You are an intelligent file classification assistant. Analyze the file info and classify it.
 
-文件信息：
-- 名称：{{filename}}
-- 类型：{{fileType}}
-- 大小：{{fileSize}}
-- 内容摘要：{{contentSnippet}}
-- 标签：{{tags}}
+File Info:
+- Name: {{filename}}
+- Type: {{fileType}}
+- Size: {{fileSize}}
+- Snippet: {{contentSnippet}}
+- Tags: {{tags}}
 
-请返回 JSON 格式的分类结果：
+Return JSON strictly:
 {
-  "category": "分类名称（如：技术文档、财务报表、设计素材、阅读材料、工作相关、个人收藏）",
-  "subfolder": "子文件夹名称（如：2024年、技术/React、阅读/小说、工作/项目）",
+  "category": "Category Name (MUST be one of: Work, Study, Life, Creation, Tech, Personal, Others)",
+  "subfolder": "Subfolder Name (e.g., 2024, Tech/React, Work/Projects)",
   "confidence": 0.95,
-  "reasoning": "分类理由简短说明",
-  "suggestedTags": ["标签1", "标签2"],
+  "reasoning": "Short justification",
+  "suggestedTags": ["Tag1", "Tag2"],
   "priority": "high"
 }
 
-注意事项：
-1. 只返回 JSON，不要有其他内容
-2. 如果信息不足，confidence 设低一些
-3. 文件夹名称使用中文，保持简洁
-4. subfolder 可以为空字符串（表示使用根目录）
-5. 确保 category 和 subfolder 的路径分隔符使用正斜杠 /`;
+IMPORTANT:
+1. Return JSON ONLY.
+2. "category" MUST be one of the English keys listed above. Do NOT translate category names (e.g. use "Work" not "工作").
+3. "subfolder" should use forward slashes / for depth.
+4. "suggestedTags" can be in the language of the content.
+5. If info is insufficient, lower confidence.`;
 
 interface ParsedClassificationResult {
   category: string;
@@ -81,7 +81,11 @@ class AIClassifier {
    */
   private getCacheKey(item: ResourceItem): string {
     const key = `${item.title}-${item.type}-${item.contentSnippet?.substring(0, 100) || ''}`;
-    return `ai:${Date.now() - (Date.now() % this.CACHE_TTL)}:${btoa(key)}`;
+    // Fix: Encode Unicode characters to UTF-8 bytes before converting to base64
+    const binaryString = Array.from(new TextEncoder().encode(key))
+      .map(byte => String.fromCharCode(byte))
+      .join('');
+    return `ai:${Date.now() - (Date.now() % this.CACHE_TTL)}:${btoa(binaryString)}`;
   }
 
   /**
@@ -148,6 +152,7 @@ class AIClassifier {
     // 检查缓存
     const cacheKey = this.getCacheKey(item);
     const cached = this.getCachedResult(cacheKey);
+    console.log('Classification cached result:', cached);
     if (cached) {
       return {
         item,
@@ -170,6 +175,7 @@ class AIClassifier {
 
     try {
       const result = await this.callLLM(item);
+      console.log('Classification result:', result);
       this.saveToCache(cacheKey, result);
 
       return {
@@ -298,6 +304,8 @@ class AIClassifier {
 
     // 解析 JSON
     const result = this.parseResponse(content);
+
+    console.log
 
     // 记录用量
     llmProviderService.recordUsage({

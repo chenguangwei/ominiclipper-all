@@ -1,4 +1,4 @@
-import { MOCK_TAGS, MOCK_FOLDERS } from '../../constants';
+import { INITIAL_TAGS, INITIAL_FOLDERS } from '../../constants';
 import { SettingsData } from './types';
 
 export const DEFAULTS = {
@@ -7,8 +7,8 @@ export const DEFAULTS = {
             version: 1,
             lastModified: new Date().toISOString(),
             items: [],
-            tags: MOCK_TAGS,
-            folders: MOCK_FOLDERS,
+            tags: INITIAL_TAGS,
+            folders: INITIAL_FOLDERS,
         };
     },
     get SETTINGS(): SettingsData {

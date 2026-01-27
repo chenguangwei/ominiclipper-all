@@ -14,6 +14,7 @@ interface TagSelectorProps {
   onAddTag: (tagId: string) => void;
   onCreateTag?: (name: string) => Promise<string | null>;
   colorMode?: ColorMode;
+  getTagName?: (tag: Tag) => string;
 }
 
 const TagSelector: React.FC<TagSelectorProps> = ({
@@ -22,6 +23,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   onAddTag,
   onCreateTag,
   colorMode = 'dark',
+  getTagName,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +35,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   // Filter tags that are not already selected and match search query
   const filteredTags = availableTags.filter(
     t => !selectedTags.includes(t.id) &&
-         t.name.toLowerCase().includes(searchQuery.toLowerCase())
+      t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Check if we can create a new tag (search query doesn't match any existing tag)
@@ -161,7 +163,9 @@ const TagSelector: React.FC<TagSelectorProps> = ({
                     name="label"
                     className={`text-[16px] ${tag.color ? `text-${tag.color}` : isLight ? 'text-gray-400' : 'text-content-secondary'}`}
                   />
-                  <span className="flex-1 text-left truncate">{tag.name}</span>
+                  <span className="flex-1 text-left truncate">
+                    {getTagName ? getTagName(tag) : tag.name}
+                  </span>
                   {tag.count !== undefined && (
                     <span className={`text-[10px] ${isLight ? 'text-gray-400' : 'text-content-secondary'}`}>
                       {tag.count}

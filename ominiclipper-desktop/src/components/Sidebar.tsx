@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Tag, Folder, ColorMode } from '../types';
 import Icon from './Icon';
 import AIAssistant from './AIAssistant';
+import { INITIAL_FOLDERS, INITIAL_TAGS } from '../constants';
 
 interface SidebarProps {
   tags: Tag[];
@@ -51,6 +52,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+
+  const getFolderName = (folder: Folder) => {
+    // Attempt to translate using folder ID
+    // If translation is missing, it falls back to defaultValue which is the folder's original name
+    return t(`initial_folders.${folder.id}`, { defaultValue: folder.name });
+  };
+
+  const getTagName = (tag: Tag) => {
+    return t(`initial_tags.${tag.id}`, { defaultValue: tag.name });
+  };
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -153,15 +164,14 @@ const Sidebar: React.FC<SidebarProps> = ({
     return childFolders.map(folder => (
       renderTreeItem(
         folder.id,
-        folder.name,
+        getFolderName(folder),
         folder.icon || 'folder',
         renderFolderTree(folder.id),
         activeFolderId === folder.id,
         () => {
           onSelectFolder(folder.id);
-          onSelectTag(null);
         },
-        undefined,
+        folder.count,
         undefined,
         (e) => handleContextMenu('folder', folder.id, e),
         true // Enable drop target
@@ -174,7 +184,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     return childTags.map(tag => (
       renderTreeItem(
         tag.id,
-        tag.name,
+        getTagName(tag),
         'label',
         renderTagTree(tag.id),
         activeTagId === tag.id,
@@ -362,20 +372,24 @@ const Sidebar: React.FC<SidebarProps> = ({
                 Create Subfolder
               </button>
             )}
-            <button
-              onClick={() => {
-                if (contextMenu.type === 'folder') {
-                  onDeleteFolder(contextMenu.id);
-                } else {
-                  onDeleteTag(contextMenu.id);
-                }
-                closeContextMenu();
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-surface-tertiary transition-colors"
-            >
-              <Icon name="delete" className="text-lg" />
-              Delete {contextMenu.type === 'folder' ? 'Folder' : 'Tag'}
-            </button>
+
+            {/* Delete Option - Protected for system items */}
+            {!(INITIAL_FOLDERS.some(f => f.id === contextMenu.id) || INITIAL_TAGS.some(t => t.id === contextMenu.id)) && (
+              <button
+                onClick={() => {
+                  if (contextMenu.type === 'folder') {
+                    onDeleteFolder(contextMenu.id);
+                  } else {
+                    onDeleteTag(contextMenu.id);
+                  }
+                  closeContextMenu();
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-surface-tertiary transition-colors"
+              >
+                <Icon name="delete" className="text-lg" />
+                Delete {contextMenu.type === 'folder' ? 'Folder' : 'Tag'}
+              </button>
+            )}
           </div>
         </>
       )}

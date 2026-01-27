@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import { ResourceType, Tag, Folder, ResourceItem, ColorMode } from '../types';
 
@@ -50,6 +51,19 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
   onCreateTag,
 }) => {
   const isLight = colorMode === 'light';
+  const { t } = useTranslation();
+
+  const getFolderName = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return folderId;
+    return t(`initial_folders.${folder.id}`, { defaultValue: folder.name });
+  };
+
+  const getTagName = (tagId: string) => {
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return tagId;
+    return t(`initial_tags.${tag.id}`, { defaultValue: tag.name });
+  };
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState<ResourceType>(ResourceType.WEB);
@@ -146,7 +160,7 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
     return childFolders.map(folder => (
       <React.Fragment key={folder.id}>
         <option value={folder.id}>
-          {'  '.repeat(level)}{folder.name}
+          {'  '.repeat(level)}{getFolderName(folder.id)}
         </option>
         {renderFolderOptions(folder.id, level + 1)}
       </React.Fragment>
@@ -312,7 +326,10 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
               <option value="">No folder</option>
               {folders.filter(f => !f.parentId).map(folder => (
                 <React.Fragment key={folder.id}>
-                  <option value={folder.id}>{folder.name}</option>
+                  <React.Fragment key={folder.id}>
+                    <option value={folder.id}>{getFolderName(folder.id)}</option>
+                    {renderFolderOptions(folder.id, 1)}
+                  </React.Fragment>
                   {renderFolderOptions(folder.id, 1)}
                 </React.Fragment>
               ))}
@@ -332,7 +349,7 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
                   className={tagBtnClass(selectedTags.includes(tag.id))}
                 >
                   <Icon name="label" className="text-xs" />
-                  {tag.name}
+                  {getTagName(tag.id)}
                 </button>
               ))}
 
@@ -422,14 +439,12 @@ const CreateResourceDialog: React.FC<CreateResourceDialogProps> = ({
             <button
               type="button"
               onClick={() => setIsCloud(!isCloud)}
-              className={`w-11 h-6 rounded-full transition-colors relative ${
-                isCloud ? 'bg-[#007aff]' : isLight ? 'bg-gray-200' : 'bg-surface'
-              }`}
+              className={`w-11 h-6 rounded-full transition-colors relative ${isCloud ? 'bg-[#007aff]' : isLight ? 'bg-gray-200' : 'bg-surface'
+                }`}
             >
               <div
-                className={`w-5 h-5 rounded-full bg-white shadow-sm absolute top-0.5 transition-all ${
-                  isCloud ? 'left-5.5 translate-x-0' : 'left-0.5'
-                }`}
+                className={`w-5 h-5 rounded-full bg-white shadow-sm absolute top-0.5 transition-all ${isCloud ? 'left-5.5 translate-x-0' : 'left-0.5'
+                  }`}
               />
             </button>
           </div>

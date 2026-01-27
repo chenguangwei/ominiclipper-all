@@ -229,7 +229,15 @@ class LLMProviderService {
   getApiKey(providerId: LLMProviderType): string {
     try {
       const keys = this.getApiKeys();
-      return keys[providerId] || '';
+      if (keys[providerId]) return keys[providerId];
+
+      // Fallback to env
+      switch (providerId) {
+        case 'openai': return import.meta.env.VITE_OPENAI_API_KEY || '';
+        case 'anthropic': return import.meta.env.VITE_ANTHROPIC_API_KEY || '';
+        case 'deepseek': return import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+        default: return '';
+      }
     } catch {
       return '';
     }

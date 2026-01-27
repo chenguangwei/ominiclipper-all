@@ -4,6 +4,8 @@ import { runMigrations } from '@/services/migrationService';
 import { APP_THEMES } from '@/constants';
 import { ResourceItem, Tag, Folder, ColorMode } from '@/types';
 import { getLocale } from '@/services/i18n';
+import aiClassifier from '@/services/aiClassifier';
+import { llmProviderService } from '@/services/llmProvider';
 
 export const useAppInit = (
     setItems: (items: ResourceItem[]) => void,
@@ -57,6 +59,22 @@ export const useAppInit = (
             setColorModeState(settings.colorMode as ColorMode);
             setCurrentThemeId(settings.themeId);
             setCustomStoragePath(settings.customStoragePath);
+
+            // Initialize AI Classifier
+            const savedProvider = (localStorage.getItem('OMNICLIPPER_DEFAULT_PROVIDER') as any) || 'openai';
+            const savedModel = localStorage.getItem('OMNICLIPPER_DEFAULT_MODEL') || llmProviderService.getDefaultModel(savedProvider);
+            const apiKey = llmProviderService.getApiKey(savedProvider);
+
+            if (apiKey) {
+                console.log('[App] Configuring AI Classifier with provider:', savedProvider);
+                aiClassifier.configure({
+                    provider: savedProvider,
+                    model: savedModel,
+                    apiKey: apiKey
+                });
+            } else {
+                console.log('[App] AI Classifier not configured (no API key)');
+            }
 
             // Apply theme and color mode (internal versions, don't save back)
             applyThemeInternal(settings.themeId);

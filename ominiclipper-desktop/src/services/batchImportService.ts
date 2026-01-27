@@ -70,9 +70,17 @@ const getResourceTypeFromExtension = (ext: string): ResourceType => {
     case '.doc': case '.docx': return ResourceType.WORD;
     case '.epub': return ResourceType.EPUB;
     case '.jpg': case '.jpeg': case '.png': case '.gif': case '.webp': return ResourceType.IMAGE;
-    case '.md': case '.markdown': return ResourceType.MARKDOWN;
+    case '.md': case '.markdown': case '.txt':
+    case '.ts': case '.tsx': case '.js': case '.jsx':
+    case '.py': case '.java': case '.c': case '.cpp': case '.h':
+    case '.cs': case '.go': case '.rs': case '.rb': case '.php':
+    case '.swift': case '.kt': case '.scala': case '.clj':
+    case '.sh': case '.bash': case '.zsh': case '.fish':
+    case '.yaml': case '.yml': case '.json': case '.xml': case '.sql':
+    case '.css': case '.scss': case '.less':
+      return ResourceType.MARKDOWN;
     case '.ppt': case '.pptx': return ResourceType.PPT;
-    case '.xls': case '.xlsx': return ResourceType.EXCEL;
+    case '.xls': case '.xlsx': case '.csv': return ResourceType.EXCEL;
     case '.html': case '.htm': return ResourceType.WEB;
     default: return ResourceType.UNKNOWN;
   }
@@ -218,7 +226,7 @@ export const classifyAndImportFile = async (
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-
+      console.log('[BatchImport] AI classification result:', aiResult);
       if (aiResult) {
         // Merge AI result with rule result
         // Logic: Rule Folder wins if High Confidence. AI Tags add to Rule Tags.
@@ -289,22 +297,55 @@ export const classifyAndImportFile = async (
     }
 
     // Step 4: Process tags
+    // Step 4: Process tags
     const itemTags: string[] = [];
+    if (classification?.folderName) {
+      const folderParts = classification.folderName.split('/');
+      const leafFolder = folderParts[folderParts.length - 1];
+      // Add folder name as tag if not ignored (e.g. Uncategorized)
+      if (leafFolder && leafFolder !== 'Uncategorized' && leafFolder !== '未分类' && leafFolder !== 'Default') {
+        itemTags.push(getOrAddTag(leafFolder, tags));
+      }
+    }
+
+    // Auto-tag based on extension for code files
+    const codeExts = ['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.c', '.cpp', '.h', '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.sh', '.bash', '.yaml', '.yml', '.json', '.xml', '.sql', '.css', '.scss'];
+    if (codeExts.includes(file.extension.toLowerCase())) {
+      itemTags.push(getOrAddTag('Code', tags));
+      const ext = file.extension.toLowerCase();
+      const langMap: Record<string, string> = {
+        '.ts': 'TypeScript', '.tsx': 'React', '.js': 'JavaScript', '.jsx': 'React',
+        '.py': 'Python', '.java': 'Java', '.c': 'C', '.cpp': 'C++', '.cs': 'C#',
+        '.go': 'Go', '.rs': 'Rust', '.rb': 'Ruby', '.php': 'PHP', '.swift': 'Swift',
+        '.kt': 'Kotlin', '.sh': 'Shell', '.bash': 'Shell', '.yaml': 'YAML',
+        '.yml': 'YAML', '.json': 'JSON', '.xml': 'XML', '.sql': 'SQL',
+        '.css': 'CSS', '.scss': 'SASS'
+      };
+      if (langMap[ext]) {
+        itemTags.push(getOrAddTag(langMap[ext], tags));
+      }
+    }
+
     if (classification?.suggestedTags) {
       for (const tagName of classification.suggestedTags) {
-        let existingTag = tags.find(t => t.name === tagName);
-        if (!existingTag) {
-          // Create new tag
-          existingTag = {
-            id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: tagName,
-            color: 'tag-purple',
-          };
-          storageService.addTag(existingTag);
-          tags = storageService.getTags(); // Refresh tags list
-        }
-        itemTags.push(existingTag.id);
+        itemTags.push(getOrAddTag(tagName, tags));
       }
+    }
+
+    // Helper to get ID for tag or create it
+    function getOrAddTag(tagName: string, currentTags: Tag[]): string {
+      let existingTag = currentTags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+      if (!existingTag) {
+        existingTag = {
+          id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: tagName,
+          color: 'tag-purple',
+        };
+        storageService.addTag(existingTag);
+        // Mutate the local tags array so subsequent lookups find it
+        currentTags.push(existingTag);
+      }
+      return existingTag.id;
     }
 
     // Step 5: ID-based Storage (Scheme A)

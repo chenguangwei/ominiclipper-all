@@ -21,6 +21,21 @@
         "trash": "Trash",
         "new_folder": "New Folder"
     },
+    "initial_folders": {
+        "f1": "Work",
+        "f2": "Study",
+        "f3": "Life",
+        "f4": "Creation",
+        "f5": "Tech",
+        "f6": "Personal"
+    },
+    "initial_tags": {
+        "t1": "Important",
+        "t2": "To Do",
+        "t3": "Done",
+        "t4": "Reading",
+        "t5": "Idea"
+    },
     "settings": {
         "title": "Settings",
         "appearance": "Appearance",

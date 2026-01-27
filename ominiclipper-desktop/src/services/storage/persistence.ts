@@ -1,7 +1,7 @@
 import { LibraryData, SettingsData, STORAGE_KEYS } from './types';
 import { storageState } from './state';
 import { DEFAULTS } from './defaults';
-import { MOCK_TAGS, MOCK_FOLDERS } from '../../constants';
+import { INITIAL_TAGS, INITIAL_FOLDERS } from '../../constants';
 
 const WRITE_DEBOUNCE_MS = 500;
 let libraryWriteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,6 +31,37 @@ export const initStorage = async (): Promise<void> => {
     } else {
         console.warn('[Storage] Falling back to localStorage (data will NOT persist across app restarts in Electron!)');
         initLocalStorage();
+    }
+
+    // SANITIZATION: Fix system folders (ensure top-level and exist)
+    if (storageState.libraryCache) {
+        let changed = false;
+        const currentFolders = storageState.libraryCache.folders || [];
+
+        // 1. Ensure all INITIAL_FOLDERS exist
+        INITIAL_FOLDERS.forEach(initFolder => {
+            const existing = currentFolders.find(f => f.id === initFolder.id);
+            if (!existing) {
+                console.log(`[Storage] Restoring missing system folder: ${initFolder.name} (${initFolder.id})`);
+                currentFolders.push({ ...initFolder });
+                changed = true;
+            } else if (existing.parentId) {
+                // 2. Fix nested system folders (flatten them)
+                console.log(`[Storage] Fixing nested system folder: ${existing.name} (${existing.id})`);
+                existing.parentId = undefined;
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            storageState.libraryCache.folders = currentFolders;
+            // Force write immediately to persist fix
+            if (storageState.isElectronEnvironment) {
+                await (window as any).electronAPI!.storageAPI!.writeLibrary(storageState.libraryCache);
+            } else {
+                localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(currentFolders));
+            }
+        }
     }
 
     storageState.isInitialized = true;
@@ -88,8 +119,8 @@ const initLocalStorage = (): void => {
             version: 1,
             lastModified: new Date().toISOString(),
             items: items ? JSON.parse(items) : [],
-            tags: tags ? JSON.parse(tags) : MOCK_TAGS,
-            folders: folders ? JSON.parse(folders) : MOCK_FOLDERS,
+            tags: tags ? JSON.parse(tags) : INITIAL_TAGS,
+            folders: folders ? JSON.parse(folders) : INITIAL_FOLDERS,
         };
 
         storageState.settingsCache = DEFAULTS.SETTINGS;
@@ -119,7 +150,7 @@ const migrateFromLocalStorage = async (): Promise<void> => {
     try {
         const items = localStorage.getItem(STORAGE_KEYS.ITEMS);
         legacyData.items = items ? JSON.parse(items) : [];
-        legacyData.tags = localStorage.getItem(STORAGE_KEYS.TAGS) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.TAGS)!) : MOCK_TAGS;
+        legacyData.tags = localStorage.getItem(STORAGE_KEYS.TAGS) ? JSON.parse(localStorage.getItem(STORAGE_KEYS.TAGS)!) : INITIAL_TAGS;
         // ... (simplified migration logic for brevity, or full Copy/Paste if critical)
         // For refactoring, I will assume we can rely on defaults if partial fails, 
         // but to match original logic, I should capture all fields.

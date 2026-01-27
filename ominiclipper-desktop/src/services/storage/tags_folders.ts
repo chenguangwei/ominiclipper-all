@@ -19,8 +19,13 @@ export const saveTags = (tags: Tag[]): void => {
 };
 
 export const addTag = (tag: Omit<Tag, 'id'>): Tag => {
-    const newTag: Tag = { ...tag, id: generateId(), count: 0 };
     const tags = getTags();
+    const existing = tags.find(t => t.name === tag.name && t.parentId === tag.parentId);
+    if (existing) {
+        return existing;
+    }
+
+    const newTag: Tag = { ...tag, id: generateId(), count: 0 };
     tags.push(newTag);
     saveTags(tags);
     return newTag;
@@ -72,8 +77,13 @@ export const saveFolders = (folders: Folder[]): void => {
 };
 
 export const addFolder = async (folder: Omit<Folder, 'id'>): Promise<Folder> => {
-    const newFolder: Folder = { ...folder, id: generateId() };
     const folders = getFolders();
+    const existing = folders.find(f => f.name === folder.name && f.parentId === folder.parentId);
+    if (existing) {
+        return existing;
+    }
+
+    const newFolder: Folder = { ...folder, id: generateId() };
     folders.push(newFolder);
     saveFolders(folders);
 

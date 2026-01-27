@@ -29,10 +29,11 @@ export interface Tag {
 }
 
 export interface Folder {
-    id: string;
-    name: string;
-    parentId?: string;
-    icon?: string;
+  id: string;
+  name: string;
+  parentId?: string;
+  icon?: string;
+  count?: number; // Calculated dynamically
 }
 
 export interface ResourceItem {

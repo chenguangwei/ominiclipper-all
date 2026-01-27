@@ -358,6 +358,7 @@ const ResourceDetails: React.FC<ResourceDetailsProps> = ({
               onAddTag={(tagId) => onAddTag(item.id, tagId)}
               onCreateTag={onCreateTag}
               colorMode={colorMode}
+              getTagName={(tag) => getTagName(tag.id)}
             />
           )}
 

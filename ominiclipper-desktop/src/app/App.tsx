@@ -166,6 +166,11 @@ const App: React.FC = () => {
   // Helper to handle confirm close
   const closeConfirm = () => setConfirmDialog(prev => ({ ...prev, isOpen: false }));
 
+  const getTagName = (tagId: string) => {
+    const tag = tags.find(t => t.id === tagId);
+    return t(`initial_tags.${tagId}`, { defaultValue: tag?.name || tagId });
+  };
+
   return (
     <div
       className={`app-container flex h-screen bg-bg-primary text-text-primary ${colorMode} theme-${currentThemeId}`}
@@ -175,14 +180,36 @@ const App: React.FC = () => {
       onDrop={dnd.handleDrop}
     >
       <Sidebar
-        tags={tags}
-        folders={folders}
+        tags={tags.map(t => ({
+          ...t,
+          parentId: ['t1', 't2', 't3'].includes(t.id) ? undefined : t.parentId,
+          count: items.filter(i => i.tags.includes(t.id)).length
+        }))}
+        folders={folders.map(f => {
+          // Helper to get all descendant IDs recursively
+          const getDescendants = (rootId: string, allFolders: Folder[]): string[] => {
+            const children = allFolders.filter(c => c.parentId === rootId);
+            if (children.length === 0) return [];
+            const childIds = children.map(c => c.id);
+            return childIds.concat(...children.map(c => getDescendants(c.id, allFolders)));
+          };
+
+          const descendantIds = getDescendants(f.id, folders);
+          const count = items.filter(i => {
+            if (i.folderId === f.id) return true;
+            return i.folderId && descendantIds.includes(i.folderId);
+          }).length;
+
+          return { ...f, count };
+        })}
         activeTagId={filterState.tagId}
         onSelectTag={(id) => setFilterState(prev => ({ ...prev, tagId: id, folderId: 'all' }))}
         activeColor={filterState.color}
         onSelectColor={(color) => setFilterState(prev => ({ ...prev, color }))}
         activeFolderId={filterState.folderId}
         onSelectFolder={(id) => setFilterState(prev => ({ ...prev, folderId: id, tagId: null }))}
+        user={null} // Placeholder until user auth is implemented or passed from props
+        onOpenAuth={() => { }} // Placeholder
         onCreateFolder={() => { setDefaultParentFolderId(undefined); setIsCreateFolderOpen(true); }}
         onCreateSubfolder={(parentId) => { setDefaultParentFolderId(parentId); setIsCreateFolderOpen(true); }}
         onCreateTag={() => { setEditingTag(null); setIsCreateTagOpen(true); }}
@@ -235,7 +262,7 @@ const App: React.FC = () => {
                   // Clear highlight on manual selection change
                   setHighlightText(null);
                 }}
-                getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
+                getTagName={getTagName}
                 sortType={sortType}
                 onSortChange={setSortType}
                 colorMode={colorMode}
@@ -249,10 +276,11 @@ const App: React.FC = () => {
                     item={selectedItem}
                     onEdit={() => { setEditingItem(selectedItem); setIsCreateResourceOpen(true); }}
                     onDelete={() => handleDeleteResource(selectedItem.id)}
-                    getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
+                    getTagName={getTagName}
                     onOpenDocument={setDocumentViewerItem}
                     // Pass highlight text
                     highlightText={highlightText}
+                    availableTags={tags} // Pass all tags for inline selector
                   />
                 </div>
               ) : (
@@ -266,20 +294,20 @@ const App: React.FC = () => {
               items={filteredItems}
               selectedId={selectedItemId}
               onSelect={setSelectedItemId}
-              getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
-              onViewItem={setDocumentViewerItem}
-              onEditItem={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
-              onDeleteItem={handleDeleteResource}
+              getTagName={getTagName}
+              onOpen={setDocumentViewerItem}
+              onEdit={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
+              onDelete={handleDeleteResource}
             />
           ) : (
             <GridView
               items={filteredItems}
               selectedId={selectedItemId}
               onSelect={setSelectedItemId}
-              getTagName={(id) => tags.find(t => t.id === id)?.name || ''}
-              onViewItem={setDocumentViewerItem}
-              onEditItem={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
-              onDeleteItem={handleDeleteResource}
+              getTagName={getTagName}
+              onOpen={setDocumentViewerItem}
+              onEdit={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
+              onDelete={handleDeleteResource}
             />
           )}
 
