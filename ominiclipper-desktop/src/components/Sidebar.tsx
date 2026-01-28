@@ -190,7 +190,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         activeTagId === tag.id,
         () => {
           onSelectTag(tag.id);
-          onSelectFolder('all');
         },
         tag.count,
         tag.color ? `text-${tag.color}` : 'text-primary',

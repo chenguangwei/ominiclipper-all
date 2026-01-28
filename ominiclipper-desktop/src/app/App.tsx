@@ -180,11 +180,28 @@ const App: React.FC = () => {
       onDrop={dnd.handleDrop}
     >
       <Sidebar
-        tags={tags.map(t => ({
-          ...t,
-          parentId: ['t1', 't2', 't3'].includes(t.id) ? undefined : t.parentId,
-          count: items.filter(i => i.tags.includes(t.id)).length
-        }))}
+        tags={tags.map(t => {
+          // Helper for recursive tag counts
+          const getDescendantTags = (rootId: string, allTags: Tag[]): string[] => {
+            const children = allTags.filter(c => c.parentId === rootId);
+            if (children.length === 0) return [];
+            const childIds = children.map(c => c.id);
+            return childIds.concat(...children.map(c => getDescendantTags(c.id, allTags)));
+          };
+
+          const descendantTagIds = getDescendantTags(t.id, tags);
+          const count = items.filter(i => {
+            if (i.tags.includes(t.id)) return true;
+            // Check if item has any of the descendant tags
+            return i.tags.some(tagId => descendantTagIds.includes(tagId));
+          }).length;
+
+          return {
+            ...t,
+            parentId: ['t1', 't2', 't3'].includes(t.id) ? undefined : t.parentId,
+            count
+          };
+        })}
         folders={folders.map(f => {
           // Helper to get all descendant IDs recursively
           const getDescendants = (rootId: string, allFolders: Folder[]): string[] => {
