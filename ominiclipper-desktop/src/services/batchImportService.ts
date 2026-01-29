@@ -27,6 +27,7 @@ export interface BatchImportFile {
   size: number;
   mimeType: string;
   modifiedAt: string;
+  isTempFile?: boolean;
 }
 
 export interface BatchImportResult {
@@ -41,6 +42,7 @@ export interface BatchImportResult {
     isAiclassified: boolean; // Whether AI was used for classification
   };
   error?: string;
+  existingItemId?: string; // ID of existing item if duplicate
 }
 
 export interface BatchImportProgress {
@@ -169,8 +171,55 @@ export const classifyAndImportFile = async (
   options: BatchImportOptions
 ): Promise<BatchImportResult> => {
   const type = getResourceTypeFromExtension(file.extension);
+  const api = (window as any).electronAPI;
 
   try {
+    // Step 0: Deduplication Check
+    let fileHash = '';
+    if (api?.calculateHash && file.path) {
+      const hashResult = await api.calculateHash(file.path);
+      if (hashResult.success && hashResult.hash) {
+        fileHash = hashResult.hash;
+
+        // Check for existing item
+        const existingItem = await storageService.getItemByHash(fileHash, true); // Check trash too
+
+        if (existingItem) {
+          console.log(`[BatchImport] Duplicate found for ${file.name} (Hash: ${fileHash})`);
+
+          if (existingItem.deletedAt) {
+            // Restore from trash
+            console.log(`[BatchImport] Restoring item from trash: ${existingItem.id}`);
+            await storageService.restoreItem(existingItem.id);
+            // Update metadata to indicate restored? Maybe not needed.
+            return {
+              success: true,
+              file,
+              classification: {
+                tags: existingItem.tags,
+                confidence: 1,
+                reasoning: 'Restored from Trash (Exact File Match)',
+                isAiclassified: false,
+              }
+            };
+          } else {
+            // Already exists and active
+            console.log(`[BatchImport] Item already exists: ${existingItem.id}. Skipping physical import.`);
+            return {
+              success: true,
+              file,
+              classification: {
+                tags: existingItem.tags,
+                confidence: 1,
+                reasoning: 'Duplicate Skipped (Exact File Match)',
+                isAiclassified: false,
+              }
+            };
+          }
+        }
+      }
+    }
+
     // Step 1: Try rule-based classification first
     let classification = null;
     let isAiclassified = false;
@@ -238,20 +287,23 @@ export const classifyAndImportFile = async (
         const baseTags = classification?.suggestedTags || [];
 
         // Determine final folder
-        // If Rule was high confidence and found a folder, keep it. Otherwise AI overrides.
-        const finalSubfolder = (ruleHighConfidence && baseSubfolder)
-          ? baseSubfolder
-          : (aiResult.subfolder || baseSubfolder);
+        // CHANGED: AI overrides Rule if AI provides a subfolder
+        const finalSubfolder = aiResult.subfolder ? aiResult.subfolder : (baseSubfolder || '');
 
         // Merge tags (Set union)
-        const finalTags = [...new Set([...baseTags, ...(aiResult.suggestedTags || [])])];
+        const mergedTags = [...new Set([...baseTags, ...(aiResult.suggestedTags || [])])];
 
-        // Add category as a tag if it exists and is not generic
-        if (aiResult.category && aiResult.category !== 'Uncategorized' && aiResult.category !== '未分类') {
-          finalTags.push(aiResult.category);
+        // REMOVED: Do not add category as a tag
+        /*
+        if (aiResult.category && aiResult.category !== 'Uncategorized' && aiResult.category !== '未分类' && !mergedTags.includes(aiResult.category)) {
+          mergedTags.push(aiResult.category);
         }
+        */
+
+        const finalTags = mergedTags;
 
         classification = {
+          folderId: aiResult.folderId,  // Use resolved folder ID
           category: aiResult.category || baseCategory,
           subfolder: finalSubfolder,
           suggestedTags: finalTags,
@@ -269,39 +321,65 @@ export const classifyAndImportFile = async (
     let targetFolderId: string | undefined = options.targetFolderId;
 
     if (classification?.subfolder && options.autoCreateFolders) {
-      // Find or create folder based on classification
-      const folderPath = classification.subfolder.split('/');
-      let parentId: string | undefined;
+      // Find or create folder based on classification (recursive)
+      // Normalizes path: "Work/Insurance/Solutions" or "Work/Insurance"
+      // Note: classification.category might be "Work", so we should check if subfolder already includes it
+
+      let folderPath = classification.subfolder.split('/').filter(p => p.trim().length > 0);
+
+      // If classification has a specific folderId (resolved from category), start there
+      // But if subfolder is a full path (e.g. "Work/Insurance"), we should start from root if the first part matches category
+
+      let parentId: string | undefined = undefined;
+
+      // Check if the path is absolute or relative to category
+      // If we have a category folder, and the first part of subfolder matches it, we assume full path
+      if (classification.category) {
+        if (folderPath[0] === classification.category) {
+          // Full path, start from root (parentId undefined)
+        } else if (classification.folderId) {
+          // Relative path, start from category folder
+          parentId = classification.folderId;
+        }
+      }
 
       for (const folderName of folderPath) {
+        // Case-insensitive check for existing folder
         let existingFolder = folders.find(
-          f => f.name === folderName && f.parentId === parentId
+          f => f.name.trim().toLowerCase() === folderName.trim().toLowerCase() && f.parentId === parentId
         );
 
         if (!existingFolder) {
           // Create new folder
-          const newFolder: Folder = {
-            id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: folderName,
+          // Note: addFolder generates its own ID and adds to store. We must use the RETURNED folder.
+          const newFolderData = {
+            name: folderName.trim(),
             parentId,
+            icon: 'folder'
           };
-          storageService.addFolder(newFolder);
-          folders = storageService.getFolders(); // Refresh folders list
-          existingFolder = newFolder;
+
+          existingFolder = await storageService.addFolder(newFolderData);
+          folders = storageService.getFolders(); // Refresh folders list (to get the updated array)
+
+          console.log(`[BatchImport] Created new folder: ${existingFolder.name} (id: ${existingFolder.id}, parent: ${existingFolder.parentId})`);
         }
 
         parentId = existingFolder.id;
       }
 
       targetFolderId = parentId;
+    } else if (!targetFolderId && classification?.folderId) {
+      // Fallback to category folder if no subfolder specified
+      targetFolderId = classification.folderId;
     }
 
     // Step 4: Process tags
-    // Step 4: Process tags
     const itemTags: string[] = [];
     if (classification?.folderName) {
-      const folderParts = classification.folderName.split('/');
-      const leafFolder = folderParts[folderParts.length - 1];
+      // If folderName is a path, take the leaf
+      const nameParts = classification.folderName.split('/');
+      const leafFolder = nameParts[nameParts.length - 1];
+
       // Add folder name as tag if not ignored (e.g. Uncategorized)
       if (leafFolder && leafFolder !== 'Uncategorized' && leafFolder !== '未分类' && leafFolder !== 'Default') {
         itemTags.push(getOrAddTag(leafFolder, tags));
@@ -334,16 +412,17 @@ export const classifyAndImportFile = async (
 
     // Helper to get ID for tag or create it
     function getOrAddTag(tagName: string, currentTags: Tag[]): string {
-      let existingTag = currentTags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+      const normalizedName = tagName.trim();
+      // Case-insensitive duplicate check
+      let existingTag = currentTags.find(t => t.name.trim().toLowerCase() === normalizedName.toLowerCase());
+
       if (!existingTag) {
-        existingTag = {
-          id: `tag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: tagName,
+        console.log(`[BatchImport] Creating new tag: "${normalizedName}"`);
+        // Use storageService.addTag to create and persist.
+        existingTag = storageService.addTag({
+          name: normalizedName,
           color: 'tag-purple',
-        };
-        storageService.addTag(existingTag);
-        // Mutate the local tags array so subsequent lookups find it
-        currentTags.push(existingTag);
+        });
       }
       return existingTag.id;
     }
@@ -368,10 +447,27 @@ export const classifyAndImportFile = async (
           if (result.success) {
             localPath = result.targetPath;
             finalPath = result.targetPath;
+
+            // Clean up temp file if it was explicitly marked as temporary
+            if (file.isTempFile) {
+              console.log('[BatchImport] Deleting temporary file marked isTempFile:', file.path);
+              const deleteResult = await api.deleteFile(file.path);
+              if (deleteResult.success) {
+                console.log('[BatchImport] Successfully cleaned up temp file');
+              } else {
+                console.warn('[BatchImport] Failed to clean up temp file:', deleteResult.error);
+              }
+            } else {
+              // Fallback: check if it looks like a temp file in root (legacy behavior safety)
+              const filesRoot = await api.fileStorageAPI?.getStoragePath();
+              if (filesRoot && file.path.startsWith(filesRoot) && !file.path.includes(itemId)) {
+                console.log('[BatchImport] Deleting guessed temporary file:', file.path);
+                const deleteResult = await api.deleteFile(file.path);
+                if (deleteResult.success) console.log('[BatchImport] Cleaned up temp file');
+              }
+            }
           } else {
             console.error('[BatchImport] ID storage import failed:', result.error);
-            // Fallback to legacy behavior if ID storage fails? 
-            // Better to keep original path than fail completely, or try legacy.
           }
         } else if (api.copyFileToStorage) {
           // Fallback to legacy flat storage
@@ -405,6 +501,7 @@ export const classifyAndImportFile = async (
       isStarred: false,
 
       contentSnippet: contentSnippet || classification?.reasoning || `Imported from ${file.name}`,
+      fileHash, // Save the hash
     });
 
     // Step 7: Save metadata.json to ID storage (Scheme A)
@@ -426,6 +523,7 @@ export const classifyAndImportFile = async (
           starred: false,
           description: newItem.contentSnippet,
           modificationTime: now,
+          fileHash,
         };
         await saveItemMetadata(itemId, metadata);
         console.log('[BatchImport] Saved metadata.json for item:', itemId);
@@ -622,7 +720,9 @@ export const importSingleFile = async (
     extension: `.${file.name.split('.').pop() || ''}`,
     size: file.size,
     mimeType: file.type,
-    modifiedAt: new Date(file.lastModified).toISOString()
+    modifiedAt: new Date(file.lastModified).toISOString(),
+    // If original path wasn't absolute (so we saved it manually) AND the path changed (it was updated to targetPath), it's a temp file
+    isTempFile: !isAbsolutePath((file as any).path || file.name) && filePath !== ((file as any).path || file.name)
   };
 
   // 2. Refresh folders and tags

@@ -106,8 +106,90 @@ export const updateFolder = (id: string, updates: Partial<Folder>): Folder | nul
 export const deleteFolder = async (id: string): Promise<boolean> => {
     const folders = getFolders();
     if (!folders.find(f => f.id === id)) return false;
-    // Recursive delete logic would be here
-    const filtered = folders.filter(f => f.id !== id && f.parentId !== id);
+
+    // 1. Identify all folders to delete (recursive)
+    const idsToDelete = new Set<string>([id]);
+
+    // Simple iterative approach to find all descendants
+    let foundNew = true;
+    while (foundNew) {
+        foundNew = false;
+        folders.forEach(f => {
+            if (f.parentId && idsToDelete.has(f.parentId) && !idsToDelete.has(f.id)) {
+                idsToDelete.add(f.id);
+                foundNew = true;
+            }
+        });
+    }
+
+    // 2. Remove folders
+    const filtered = folders.filter(f => !idsToDelete.has(f.id));
     saveFolders(filtered);
+
+    // 3. Cleanup items (orphan them to Uncategorized)
+    const items = getItems();
+    let itemsChanged = false;
+    items.forEach(i => {
+        if (i.folderId && idsToDelete.has(i.folderId)) {
+            i.folderId = undefined; // effectively 'uncategorized'
+            itemsChanged = true;
+        }
+    });
+
+    if (itemsChanged) {
+        saveItems(items);
+    }
+
     return true;
+};
+
+/**
+ * Remove orphan folders (folders with non-existent parentIds)
+ * Returns the number of folders removed
+ */
+export const cleanupOrphanFolders = (): number => {
+    const folders = getFolders();
+    const folderIds = new Set(folders.map(f => f.id));
+
+    // Find orphan folders (have parentId but parent doesn't exist)
+    const orphanIds = new Set<string>();
+
+    // Iteratively find all orphans (including nested orphans)
+    let foundNew = true;
+    while (foundNew) {
+        foundNew = false;
+        folders.forEach(f => {
+            if (f.parentId && !folderIds.has(f.parentId) && !orphanIds.has(f.id)) {
+                orphanIds.add(f.id);
+                folderIds.delete(f.id); // Remove from valid set so children become orphans too
+                foundNew = true;
+            }
+        });
+    }
+
+    if (orphanIds.size === 0) {
+        return 0;
+    }
+
+    console.log(`[Storage] Cleaning up ${orphanIds.size} orphan folders:`, [...orphanIds]);
+
+    // Remove orphan folders
+    const filtered = folders.filter(f => !orphanIds.has(f.id));
+    saveFolders(filtered);
+
+    // Update items that reference orphan folders
+    const items = getItems();
+    let itemsChanged = false;
+    items.forEach(i => {
+        if (i.folderId && orphanIds.has(i.folderId)) {
+            i.folderId = undefined;
+            itemsChanged = true;
+        }
+    });
+
+    if (itemsChanged) {
+        saveItems(items);
+    }
+
+    return orphanIds.size;
 };

@@ -1,6 +1,7 @@
 "use strict";
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 let electron;
 try {
   electron = require("electron");
@@ -372,6 +373,23 @@ function registerIPCHandlers() {
       return { success: false, error: error.message };
     }
   });
+  ipcMain.handle("fs:calculateHash", async (event, filePath) => {
+    try {
+      if (!isAbsolutePath(filePath) || !fs.existsSync(filePath)) {
+        return { success: false, error: "File not found or invalid path" };
+      }
+      return new Promise((resolve) => {
+        const hash = crypto.createHash("sha256");
+        const stream = fs.createReadStream(filePath);
+        stream.on("error", (err) => resolve({ success: false, error: err.message }));
+        stream.on("data", (chunk) => hash.update(chunk));
+        stream.on("end", () => resolve({ success: true, hash: hash.digest("hex") }));
+      });
+    } catch (error) {
+      console.error("fs:calculateHash error:", error);
+      return { success: false, error: error.message };
+    }
+  });
   ipcMain.handle("fs:scanDirectory", async (event, dirPath, options = {}) => {
     const { recursive = true, maxDepth = 5 } = options;
     const supportedExtensions = [".pdf", ".doc", ".docx", ".epub", ".jpg", ".jpeg", ".png", ".gif", ".webp"];
@@ -420,7 +438,7 @@ function registerIPCHandlers() {
       const userDataPath = app.getPath("userData");
       console.log('app.getPath("userData"):', userDataPath);
       const baseStoragePath = customStoragePath || userDataPath;
-      const storagePath = path.join(baseStoragePath, "OmniCollector", "documents");
+      const storagePath = path.join(baseStoragePath, "OmniCollector", "files");
       if (!fs.existsSync(storagePath)) {
         fs.mkdirSync(storagePath, { recursive: true });
       }
@@ -446,7 +464,7 @@ function registerIPCHandlers() {
   ipcMain.handle("fs:saveEmbeddedFile", async (event, base64Data, fileName, itemId) => {
     try {
       const userDataPath = app.getPath("userData");
-      const storagePath = path.join(userDataPath, "OmniCollector", "documents");
+      const storagePath = path.join(userDataPath, "OmniCollector", "files");
       if (!fs.existsSync(storagePath)) {
         fs.mkdirSync(storagePath, { recursive: true });
       }
@@ -552,6 +570,13 @@ function registerIPCHandlers() {
     };
   }
   ipcMain.handle("fileStorage:getStoragePath", () => {
+    const paths = getFileStoragePaths();
+    if (!fs.existsSync(paths.files)) {
+      fs.mkdirSync(paths.files, { recursive: true });
+    }
+    return paths.files;
+  });
+  ipcMain.handle("fileStorage:getFilesPath", async () => {
     const paths = getFileStoragePaths();
     if (!fs.existsSync(paths.files)) {
       fs.mkdirSync(paths.files, { recursive: true });
@@ -935,117 +960,6 @@ function registerIPCHandlers() {
     ensureStorageDirectories();
     return backupDir;
   });
-  function getFolderPaths() {
-    const paths = getStoragePaths();
-    return {
-      base: path.join(paths.base, "folders")
-    };
-  }
-  ipcMain.handle("folder:getFoldersPath", () => {
-    const paths = getFolderPaths();
-    if (!fs.existsSync(paths.base)) {
-      fs.mkdirSync(paths.base, { recursive: true });
-    }
-    return paths.base;
-  });
-  ipcMain.handle("folder:create", async (event, folderId) => {
-    const paths = getFolderPaths();
-    const folderPath = path.join(paths.base, folderId);
-    try {
-      if (!fs.existsSync(folderPath)) {
-        fs.mkdirSync(folderPath, { recursive: true });
-      }
-      return { success: true, path: folderPath };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-  ipcMain.handle("folder:delete", async (event, folderId) => {
-    const paths = getFolderPaths();
-    const folderPath = path.join(paths.base, folderId);
-    try {
-      if (fs.existsSync(folderPath)) {
-        fs.rmSync(folderPath, { recursive: true, force: true });
-      }
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-  ipcMain.handle("folder:exists", async (event, folderId) => {
-    const paths = getFolderPaths();
-    const folderPath = path.join(paths.base, folderId);
-    return fs.existsSync(folderPath);
-  });
-  function getItemsPaths() {
-    const paths = getStoragePaths();
-    return {
-      base: path.join(paths.base, "items"),
-      indexFile: path.join(paths.base, "items", "index.json")
-    };
-  }
-  ipcMain.handle("item:getItemsPath", () => {
-    const paths = getItemsPaths();
-    if (!fs.existsSync(paths.base)) {
-      fs.mkdirSync(paths.base, { recursive: true });
-    }
-    return paths.base;
-  });
-  ipcMain.handle("item:saveMetadata", async (event, itemId, metadata) => {
-    const paths = getItemsPaths();
-    const metadataPath = path.join(paths.base, itemId, "metadata.json");
-    try {
-      if (!fs.existsSync(path.join(paths.base, itemId))) {
-        fs.mkdirSync(path.join(paths.base, itemId), { recursive: true });
-      }
-      fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
-      return { success: true, path: metadataPath };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-  ipcMain.handle("item:readMetadata", async (event, itemId) => {
-    const paths = getItemsPaths();
-    const metadataPath = path.join(paths.base, itemId, "metadata.json");
-    try {
-      if (!fs.existsSync(metadataPath)) return null;
-      const content = fs.readFileSync(metadataPath, "utf-8");
-      return JSON.parse(content);
-    } catch (error) {
-      return null;
-    }
-  });
-  ipcMain.handle("item:deleteMetadata", async (event, itemId) => {
-    const paths = getItemsPaths();
-    const itemDir = path.join(paths.base, itemId);
-    try {
-      if (fs.existsSync(itemDir)) {
-        fs.rmSync(itemDir, { recursive: true, force: true });
-      }
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-  ipcMain.handle("item:saveIndex", async (event, index) => {
-    const paths = getItemsPaths();
-    try {
-      fs.writeFileSync(paths.indexFile, JSON.stringify(index, null, 2), "utf-8");
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-  ipcMain.handle("item:readIndex", async () => {
-    const paths = getItemsPaths();
-    try {
-      if (!fs.existsSync(paths.indexFile)) return null;
-      const content = fs.readFileSync(paths.indexFile, "utf-8");
-      return JSON.parse(content);
-    } catch (error) {
-      return null;
-    }
-  });
   ipcMain.handle("file:moveFile", async (event, sourcePath, targetPath) => {
     try {
       const targetDir = path.dirname(targetPath);
@@ -1066,6 +980,21 @@ function registerIPCHandlers() {
       }
       return { success: true, path: targetPath };
     } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+  ipcMain.handle("file:deleteFile", async (event, filePath) => {
+    console.log("[Main] Received file:deleteFile request for:", filePath);
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log("[Main] Successfully deleted file:", filePath);
+        return { success: true };
+      }
+      console.warn("[Main] File to delete does not exist:", filePath);
+      return { success: false, error: "File does not exist" };
+    } catch (error) {
+      console.error("[Main] Error deleting file:", error);
       return { success: false, error: error.message };
     }
   });

@@ -35,6 +35,7 @@ try {
         readFileAsDataUrl: (filePath) => ipcRenderer.invoke('fs:readFileAsDataUrl', filePath),
         fileExists: (filePath) => ipcRenderer.invoke('fs:fileExists', filePath),
         isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
+        deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
 
         // Shell operations
         openPath: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
@@ -168,23 +169,6 @@ try {
         },
 
         // ============================================
-        // Folder Directory API (Eagle-style folders)
-        // ============================================
-        folderAPI: {
-            // Get the folders base path
-            getFoldersPath: () => ipcRenderer.invoke('folder:getFoldersPath'),
-
-            // Create a physical folder
-            createFolder: (folderId) => ipcRenderer.invoke('folder:create', folderId),
-
-            // Delete a physical folder
-            deleteFolder: (folderId) => ipcRenderer.invoke('folder:delete', folderId),
-
-            // Check if folder exists
-            folderExists: (folderId) => ipcRenderer.invoke('folder:exists', folderId),
-        },
-
-        // ============================================
         // Item Metadata API (Eagle-style items/{id}/metadata.json)
         // ============================================
         itemAPI: {
@@ -213,6 +197,9 @@ try {
         fileAPI: {
             // Move a file from source path to target path
             moveFile: (sourcePath, targetPath) => ipcRenderer.invoke('file:moveFile', sourcePath, targetPath),
+
+            // Delete a file by path
+            deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
         },
 
         // ============================================

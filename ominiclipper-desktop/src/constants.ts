@@ -46,6 +46,7 @@ export const INITIAL_ITEMS: ResourceItem[] = [
     tags: ['t1'],
     folderId: 'f1',
     color: 'tag-blue',
+    isStarred: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     isCloud: false,

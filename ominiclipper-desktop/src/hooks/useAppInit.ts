@@ -50,7 +50,7 @@ export const useAppInit = (
             await storageService.initStorage();
 
             // Load data from storage after initialization
-            setItems(storageService.getItems());
+            setItems(storageService.getItemsAsResourceItems());
             setTags(storageService.getTags());
             setFolders(storageService.getFolders());
 
@@ -70,7 +70,8 @@ export const useAppInit = (
                 aiClassifier.configure({
                     provider: savedProvider,
                     model: savedModel,
-                    apiKey: apiKey
+                    apiKey: apiKey,
+                    language: getLocale() || 'en'
                 });
             } else {
                 console.log('[App] AI Classifier not configured (no API key)');
@@ -86,7 +87,7 @@ export const useAppInit = (
             // Run data migrations (async, non-blocking)
             runMigrations().then(() => {
                 // Refresh items after migration in case localPath was updated
-                setItems(storageService.getItems());
+                setItems(storageService.getItemsAsResourceItems());
                 console.log('[App] Migrations complete');
             }).catch(e => {
                 console.error('[App] Migration error:', e);
@@ -98,6 +99,19 @@ export const useAppInit = (
                     console.log('[App] Vector store ready for semantic search');
                 }
             });
+
+            // Auto-cleanup items in trash older than 3 days
+            storageService.cleanupOldTrash(3).then(count => {
+                if (count > 0) console.log(`[App] Cleaned up ${count} items from trash`);
+            }).catch(e => console.error('[App] Trash cleanup failed:', e));
+
+            // Cleanup orphan folders (folders with non-existent parentIds)
+            const orphanCount = storageService.cleanupOrphanFolders();
+            if (orphanCount > 0) {
+                console.log(`[App] Cleaned up ${orphanCount} orphan folders`);
+                // Refresh folders after cleanup
+                setFolders(storageService.getFolders());
+            }
         };
 
         initApp();

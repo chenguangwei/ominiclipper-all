@@ -109,13 +109,22 @@ const App: React.FC = () => {
   // --- Handlers (that require App context) ---
 
   const handleDeleteResource = async (id: string) => {
+    const itemToDelete = items.find(i => i.id === id);
+    const isPermanent = !!itemToDelete?.deletedAt || filterState.folderId === 'trash';
+
     setConfirmDialog({
       isOpen: true,
-      title: 'Delete Resource',
-      message: 'Are you sure you want to delete this resource?',
+      title: isPermanent ? 'Delete Permanently' : 'Move to Trash',
+      message: isPermanent
+        ? 'Are you sure you want to permanently delete this resource? This action cannot be undone.'
+        : 'Are you sure you want to move this resource to Trash?',
       onConfirm: async () => {
-        await storageService.deleteItem(id);
-        const newItems = storageService.getItems();
+        if (isPermanent) {
+          await storageService.permanentlyDeleteItem(id);
+        } else {
+          await storageService.deleteItem(id);
+        }
+        const newItems = storageService.getItemsAsResourceItems();
         setItems([...newItems]);
         if (selectedItemId === id) setSelectedItemId(null);
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
@@ -237,7 +246,7 @@ const App: React.FC = () => {
         onDeleteTag={async (id) => {
           await storageService.deleteTag(id);
           setTags([...storageService.getTags()]);
-          setItems([...storageService.getItems()]);
+          setItems([...storageService.getItemsAsResourceItems()]);
         }}
         colorMode={colorMode}
       />
@@ -378,7 +387,7 @@ const App: React.FC = () => {
             } else {
               await storageService.addItem(itemData);
             }
-            setItems([...storageService.getItems()]);
+            setItems([...storageService.getItemsAsResourceItems()]);
             setEditingItem(null);
             setIsCreateResourceOpen(false);
           }}

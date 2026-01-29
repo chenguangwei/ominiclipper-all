@@ -1,11 +1,18 @@
-import { LibraryData, SettingsData, STORAGE_KEYS } from './types';
+import type { SettingsData, ItemIndexEntry } from './types';
+import { STORAGE_KEYS } from './types';
+import type { Folder } from '../../types';
 import { storageState } from './state';
 import { DEFAULTS } from './defaults';
 import { INITIAL_TAGS, INITIAL_FOLDERS } from '../../constants';
+import type { ResourceItem, ResourceType } from '../../types';
+import * as itemFileService from '../itemFileMetadataService';
 
 const WRITE_DEBOUNCE_MS = 500;
 let libraryWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let settingsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Current schema version
+const CURRENT_SCHEMA_VERSION = 2;
 
 // ============================================
 // Initialization & Persistence
@@ -64,6 +71,16 @@ export const initStorage = async (): Promise<void> => {
         }
     }
 
+    // Deduplicate Folders (Fix for "Office, Office, Office" issue)
+    if (storageState.libraryCache) {
+        await deduplicateFolders();
+    }
+
+    // Check for schema migration
+    if (storageState.libraryCache && storageState.isElectronEnvironment) {
+        await checkAndMigrateSchema();
+    }
+
     storageState.isInitialized = true;
     console.log('[Storage] Initialization complete');
 };
@@ -75,9 +92,8 @@ const initElectronStorage = async (): Promise<void> => {
     storageState.libraryCache = await storageAPI.readLibrary();
 
     if (!storageState.libraryCache) {
-        // SAFETY CHECK: If we failed to read the library, but we suspect it should exist, 
+        // SAFETY CHECK: If we failed to read the library, but we suspect it should exist,
         // we should be careful about overwriting it with defaults.
-        // For now, we follow the original logic but add logging.
         console.warn('[Storage] Library cache is empty after read.');
 
         // Check for migrations
@@ -89,11 +105,13 @@ const initElectronStorage = async (): Promise<void> => {
         } else {
             // Only initialize defaults if we are sure there is no legacy data either
             console.log('[Storage] Fresh install or data reset, initializing empty data');
-            storageState.libraryCache = DEFAULTS.LIBRARY_CACHE;
-
-            // IMPORTANT: Only write if we are SURE. 
-            // Writing immediately here might overwrite a corrupted file that could be recovered manually.
-            // For now, we will write to ensure the app works, but rely on backups.
+            storageState.libraryCache = {
+                version: CURRENT_SCHEMA_VERSION,
+                lastModified: new Date().toISOString(),
+                items: [],
+                tags: INITIAL_TAGS,
+                folders: INITIAL_FOLDERS,
+            };
             await storageAPI.writeLibrary(storageState.libraryCache);
         }
     }
@@ -107,6 +125,76 @@ const initElectronStorage = async (): Promise<void> => {
 
     console.log('[Storage] Loaded from JSON files');
     console.log('[Storage] - Items:', storageState.libraryCache?.items?.length || 0);
+};
+
+/**
+ * Check and migrate library data to current schema version
+ * v1 -> v2: Convert full ResourceItem[] to lightweight ItemIndexEntry[]
+ * and create files/{id}/metadata.json for each item
+ */
+const checkAndMigrateSchema = async (): Promise<void> => {
+    if (!storageState.libraryCache) return;
+
+    const currentVersion = storageState.libraryCache.version || 1;
+    if (currentVersion >= CURRENT_SCHEMA_VERSION) {
+        console.log('[Storage] Schema version is current:', currentVersion);
+        return;
+    }
+
+    console.log(`[Storage] Migrating schema from v${currentVersion} to v${CURRENT_SCHEMA_VERSION}...`);
+
+    const items = storageState.libraryCache.items as ResourceItem[];
+
+    if (items.length === 0) {
+        // No items to migrate, just update version
+        storageState.libraryCache.version = CURRENT_SCHEMA_VERSION;
+        await (window as any).electronAPI!.storageAPI!.writeLibrary(storageState.libraryCache);
+        console.log('[Storage] Schema migration complete (no items to migrate)');
+        return;
+    }
+
+    console.log(`[Storage] Found ${items.length} items to migrate...`);
+
+    // Migrate each item: create files/{id}/metadata.json and convert to lightweight index
+    let migratedCount = 0;
+    let failedCount = 0;
+    const newIndexEntries: ItemIndexEntry[] = [];
+
+    for (const item of items) {
+        // Create lightweight index entry first (always succeeds)
+        newIndexEntries.push({
+            id: item.id,
+            title: item.title,
+            type: item.type as ResourceType,
+            tags: item.tags || [],
+            folderId: item.folderId,
+            color: item.color || 'tag-gray',
+            isStarred: item.isStarred || false,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            deletedAt: item.deletedAt,
+        });
+
+        // Try to save full metadata (can fail if fileStorageAPI not ready)
+        try {
+            await itemFileService.saveItemMetadata(item);
+            console.log(`[Migration] Created metadata file for: ${item.title}`);
+            migratedCount++;
+        } catch (e) {
+            console.error(`[Migration] Failed to create metadata for ${item.id}:`, e);
+            failedCount++;
+        }
+    }
+
+    // Update library.json with lightweight index entries
+    storageState.libraryCache.items = newIndexEntries;
+    storageState.libraryCache.version = CURRENT_SCHEMA_VERSION;
+    storageState.libraryCache.lastModified = new Date().toISOString();
+
+    // Save updated library.json
+    await (window as any).electronAPI!.storageAPI!.writeLibrary(storageState.libraryCache);
+
+    console.log(`[Storage] Schema migration complete. Migrated: ${migratedCount}, Failed: ${failedCount}`);
 };
 
 const initLocalStorage = (): void => {
@@ -175,6 +263,13 @@ export const scheduleLibraryWrite = (): void => {
         console.log('[Storage] - libraryCache exists:', !!storageState.libraryCache);
         console.log('[Storage] - items count:', storageState.libraryCache?.items?.length || 0);
 
+        // Debug: Log items with deletedAt before writing
+        const deletedItems = storageState.libraryCache?.items?.filter(i => i.deletedAt) || [];
+        if (deletedItems.length > 0) {
+            console.log('[Storage] - soft-deleted items to write:', deletedItems.length);
+            deletedItems.forEach(i => console.log('  - ', i.id, i.title, 'deletedAt:', i.deletedAt));
+        }
+
         if (storageState.isElectronEnvironment && storageState.libraryCache) {
             console.log('[Storage] Writing to Electron JSON storage...');
             try {
@@ -220,5 +315,80 @@ export const flushPendingWrites = async (): Promise<void> => {
     if (storageState.isElectronEnvironment) {
         if (storageState.libraryCache) await (window as any).electronAPI!.storageAPI!.writeLibrary(storageState.libraryCache);
         if (storageState.settingsCache) await (window as any).electronAPI!.storageAPI!.writeSettings(storageState.settingsCache);
+    }
+};
+
+/**
+ * Deduplicate folders by Name and ParentId
+ * Merges duplicate folders into one, favoring system IDs (f1-f6).
+ * Remaps items from deleted folders to the kept folder.
+ */
+const deduplicateFolders = async (): Promise<void> => {
+    if (!storageState.libraryCache?.folders) return;
+
+    const folders = storageState.libraryCache.folders;
+    const folderMap = new Map<string, Folder[]>();
+
+    // Group by key "parentId:name"
+    folders.forEach(f => {
+        const key = `${f.parentId || 'root'}:${f.name}`;
+        if (!folderMap.has(key)) folderMap.set(key, []);
+        folderMap.get(key)!.push(f);
+    });
+
+    let itemsChanged = false;
+    let foldersChanged = false;
+    const items = storageState.libraryCache.items || [];
+    const idsToDelete = new Set<string>();
+
+    folderMap.forEach((duplicates) => {
+        if (duplicates.length > 1) {
+            console.log(`[Storage] Deduplicating folder "${duplicates[0].name}" (${duplicates.length} copies)`);
+            foldersChanged = true;
+
+            // Pick winner: System ID (f1, f2...) > Shortest ID > First
+            // We want to keep the one that matches INITIAL_FOLDERS if possible
+            const winner = duplicates.reduce((prev, curr) => {
+                const prevIsSystem = INITIAL_FOLDERS.some(sys => sys.id === prev.id);
+                const currIsSystem = INITIAL_FOLDERS.some(sys => sys.id === curr.id);
+                if (prevIsSystem && !currIsSystem) return prev;
+                if (!prevIsSystem && currIsSystem) return curr;
+                return prev; // Default keep first
+            });
+
+            // Identify losers
+            duplicates.forEach(f => {
+                if (f.id !== winner.id) {
+                    idsToDelete.add(f.id);
+                    // Remap items
+                    items.forEach(item => {
+                        if (item.folderId === f.id) {
+                            console.log(`[Storage] Remapping item "${item.title}" from ${f.id} to ${winner.id}`);
+                            item.folderId = winner.id;
+                            itemsChanged = true;
+                        }
+                    });
+                    // Remap child folders?
+                    folders.forEach(child => {
+                        if (child.parentId === f.id) {
+                            child.parentId = winner.id;
+                        }
+                    });
+                }
+            });
+        }
+    });
+
+    if (foldersChanged) {
+        storageState.libraryCache.folders = folders.filter(f => !idsToDelete.has(f.id));
+        console.log(`[Storage] Removed ${idsToDelete.size} duplicate folders.`);
+
+        // Save changes
+        if (storageState.isElectronEnvironment) {
+            await (window as any).electronAPI!.storageAPI!.writeLibrary(storageState.libraryCache);
+        } else {
+            localStorage.setItem(STORAGE_KEYS.ITEMS, JSON.stringify(storageState.libraryCache.items));
+            localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(storageState.libraryCache.folders));
+        }
     }
 };

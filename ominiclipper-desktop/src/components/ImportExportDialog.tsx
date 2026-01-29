@@ -42,7 +42,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
         mimeType = 'application/json';
       } else {
         // CSV export
-        const items = storageService.getItems();
+        const items = storageService.getItemsAsResourceItems();
         const headers = ['ID', 'Title', 'Type', 'Tags', 'Folder', 'Color', 'Created At', 'Updated At', 'Path'];
         const rows = items.map(item => [
           item.id,
@@ -93,7 +93,7 @@ const ImportExportDialog: React.FC<ImportExportDialogProps> = ({
       setMessage({ type: 'success', text: 'Exporting... please wait.' });
 
       // 2. Prepare data
-      const items = storageService.getItems();
+      const items = storageService.getItemsAsResourceItems();
       const folders = storageService.getFolders();
       const tags = storageService.getTags();
 

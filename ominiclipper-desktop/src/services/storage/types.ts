@@ -1,11 +1,24 @@
-import { ResourceItem, Tag, Folder, FilterState } from '../../types';
+import type { Tag, Folder, FilterState, ResourceType } from '../../types';
+
+export interface ItemIndexEntry {
+  id: string;
+  title: string;
+  type: ResourceType;
+  tags: string[]; // Tag IDs
+  folderId?: string;
+  color: string;
+  isStarred: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string; // Soft delete marker
+}
 
 export interface LibraryData {
-    version: number;
-    lastModified: string;
-    items: ResourceItem[];
-    tags: Tag[];
-    folders: Folder[];
+  version: number;  // Schema version for migrations
+  lastModified: string;
+  items: ItemIndexEntry[];  // Lightweight index entries instead of full ResourceItem[]
+  tags: Tag[];
+  folders: Folder[];
 }
 
 export interface SettingsData {

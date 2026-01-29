@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { setLocale, SupportedLocale } from '../services/i18n';
 import Icon from './Icon';
 import * as storageService from '../services/storageService';
 import { llmProviderService } from '../services/llmProvider';
+import aiClassifier from '../services/aiClassifier';
 import { LLMProviderType } from '../types/classification';
 import { ColorMode } from '../types';
 
@@ -93,6 +95,16 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
       localStorage.setItem('OMNICLIPPER_CUSTOM_API_URL', customApiUrl);
     }
 
+    // Update AI Classifier Config
+    if (apiKey) {
+      aiClassifier.configure({
+        provider: selectedProvider,
+        model: selectedModel,
+        apiKey: apiKey,
+        language: i18n.language || 'en'
+      });
+    }
+
     // Notify components that might be listening (quick hack for now)
     window.dispatchEvent(new Event('storage'));
 
@@ -143,10 +155,18 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <select
                 className="bg-surface-secondary border border-[rgb(var(--color-border)/0.2)] rounded-lg px-2 py-1 text-xs text-content outline-none focus:border-primary"
                 value={i18n.language}
-                onChange={(e) => i18n.changeLanguage(e.target.value)}
+                onChange={(e) => {
+                  const lang = e.target.value as SupportedLocale;
+                  i18n.changeLanguage(lang);
+                  setLocale(lang);
+
+                  // Also update AI config immediately if possible, though handleSave does it too.
+                  // But handleSave is for the dialog's local state. 
+                  // The AI config update in handleSave uses i18n.language, so that will be correct.
+                }}
               >
                 <option value="en">English</option>
-                <option value="zh">中文</option>
+                <option value="zh_CN">中文</option>
               </select>
             </div>
 

@@ -9,8 +9,11 @@ import {
   AIClassifierConfig,
   LLMProviderType
 } from '../types/classification';
+import { getFolders } from './storage/tags_folders';
+import i18next from 'i18next';
 import llmProviderService from './llmProvider';
 
+// 分类 Prompt 模板
 // 分类 Prompt 模板
 const CLASSIFICATION_PROMPT = `You are an intelligent file classification assistant. Analyze the file info and classify it.
 
@@ -21,25 +24,29 @@ File Info:
 - Snippet: {{contentSnippet}}
 - Tags: {{tags}}
 
+Output Language: {{language}}
+
 Return JSON strictly:
 {
-  "category": "Category Name (MUST be one of: Work, Study, Life, Creation, Tech, Personal, Others)",
+  "category": "Category Name (MUST be one of: {{categories}})",
   "subfolder": "Subfolder Name (e.g., 2024, Tech/React, Work/Projects)",
   "confidence": 0.95,
-  "reasoning": "Short justification",
+  "reasoning": "Short justification in {{language}}",
   "suggestedTags": ["Tag1", "Tag2"],
   "priority": "high"
 }
 
 IMPORTANT:
 1. Return JSON ONLY.
-2. "category" MUST be one of the English keys listed above. Do NOT translate category names (e.g. use "Work" not "工作").
+2. "category" MUST be one of the keys listed above in {{language}}.
 3. "subfolder" should use forward slashes / for depth.
-4. "suggestedTags" can be in the language of the content.
-5. If info is insufficient, lower confidence.`;
+4. "suggestedTags" MUST be in {{language}}.
+5. "reasoning" MUST be in {{language}}.
+6. If info is insufficient, lower confidence.`;
 
 interface ParsedClassificationResult {
   category: string;
+  folderId?: string;
   subfolder: string;
   confidence: number;
   reasoning: string;
@@ -80,7 +87,19 @@ class AIClassifier {
    * 生成缓存 key
    */
   private getCacheKey(item: ResourceItem): string {
-    const key = `${item.title}-${item.type}-${item.contentSnippet?.substring(0, 100) || ''}`;
+    // Generate signature for current folder structure to ensure cache invalidation on folder changes
+    const folders = getFolders();
+    const folderSignature = folders
+      .map(f => `${f.id}:${f.name}`)
+      .sort()
+      .join('|');
+
+    // Hash the folder signature (simple adler32 or just use length/substring if performance matters, 
+    // but full string is safer for correctness. Given < 100 folders usually, it's fine.)
+
+    // Base key on item properties AND folder structure
+    const key = `${item.title}-${item.type}-${item.contentSnippet?.substring(0, 100) || ''}-${folderSignature}`;
+
     // Fix: Encode Unicode characters to UTF-8 bytes before converting to base64
     const binaryString = Array.from(new TextEncoder().encode(key))
       .map(byte => String.fromCharCode(byte))
@@ -157,6 +176,7 @@ class AIClassifier {
       return {
         item,
         category: cached.category,
+        folderId: cached.folderId,
         subfolder: cached.subfolder,
         confidence: cached.confidence,
         reasoning: cached.reasoning,
@@ -178,9 +198,21 @@ class AIClassifier {
       console.log('Classification result:', result);
       this.saveToCache(cacheKey, result);
 
+      // Resolve folder ID from category name (Localized -> ID)
+      let resolvedFolderId: string | undefined;
+      if (result.category) {
+        const folders = getFolders();
+        const matched = folders.find(f =>
+          f.name === result.category ||
+          i18next.t(`initial_folders.${f.id}`, { defaultValue: f.name }) === result.category
+        );
+        if (matched) resolvedFolderId = matched.id;
+      }
+
       return {
         item,
         category: result.category,
+        folderId: resolvedFolderId,
         subfolder: result.subfolder,
         confidence: result.confidence,
         reasoning: result.reasoning,
@@ -265,6 +297,8 @@ class AIClassifier {
 
     const prompt = this.buildPrompt(item);
 
+    console.log('prompt', prompt);
+
     const response = await fetch(`${provider.apiBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -334,12 +368,19 @@ class AIClassifier {
       ? this.formatFileSize(item.fileSize)
       : 'Unknown';
 
+    const folders = getFolders();
+    const categoryNames = folders.map(f =>
+      i18next.t(`initial_folders.${f.id}`, { defaultValue: f.name })
+    ).join(', ');
+
     const replacements: Record<string, string> = {
       '{{filename}}': item.title,
       '{{fileType}}': item.type,
       '{{fileSize}}': fileSizeStr,
       '{{contentSnippet}}': item.contentSnippet || '无内容摘要',
-      '{{tags}}': item.tags.length > 0 ? item.tags.join(', ') : '无标签'
+      '{{tags}}': item.tags.length > 0 ? item.tags.join(', ') : '无标签',
+      '{{language}}': this.config?.language === 'zh_CN' ? 'Chinese (Simplified)' : 'English',
+      '{{categories}}': categoryNames
     };
 
     for (const [placeholder, value] of Object.entries(replacements)) {
@@ -364,6 +405,7 @@ class AIClassifier {
 
       return {
         category: parsed.category || '未分类',
+        folderId: undefined, // Will be resolved outside
         subfolder: parsed.subfolder || '',
         confidence: Math.min(1, Math.max(0, parsed.confidence || 0.5)),
         reasoning: parsed.reasoning || '',

@@ -34,6 +34,7 @@ try {
     readFileAsDataUrl: (filePath) => ipcRenderer.invoke('fs:readFileAsDataUrl', filePath),
     fileExists: (filePath) => ipcRenderer.invoke('fs:fileExists', filePath),
     isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
+    deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
 
     // Shell operations
     openPath: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
@@ -47,6 +48,7 @@ try {
     saveEmbeddedFile: (base64Data, fileName, itemId) => ipcRenderer.invoke('fs:saveEmbeddedFile', base64Data, fileName, itemId),
     importFileToIdStorage: (sourcePath, itemId) => ipcRenderer.invoke('fs:importFileToIdStorage', sourcePath, itemId),
     exportFile: (sourcePath, targetDir, targetFileName) => ipcRenderer.invoke('fs:exportFile', sourcePath, targetDir, targetFileName),
+    calculateHash: (filePath) => ipcRenderer.invoke('fs:calculateHash', filePath),
 
     // Browser extension sync
     syncFromBrowserExtension: (item) => ipcRenderer.invoke('sync:browserExtension', item),
@@ -168,51 +170,14 @@ try {
     },
 
     // ============================================
-    // Folder Directory API (Eagle-style folders)
-    // ============================================
-    folderAPI: {
-      // Get the folders base path
-      getFoldersPath: () => ipcRenderer.invoke('folder:getFoldersPath'),
-
-      // Create a physical folder
-      createFolder: (folderId) => ipcRenderer.invoke('folder:create', folderId),
-
-      // Delete a physical folder
-      deleteFolder: (folderId) => ipcRenderer.invoke('folder:delete', folderId),
-
-      // Check if folder exists
-      folderExists: (folderId) => ipcRenderer.invoke('folder:exists', folderId),
-    },
-
-    // ============================================
-    // Item Metadata API (Eagle-style items/{id}/metadata.json)
-    // ============================================
-    itemAPI: {
-      // Get the items base path
-      getItemsPath: () => ipcRenderer.invoke('item:getItemsPath'),
-
-      // Save item metadata to file
-      saveItemMetadata: (itemId, metadata) => ipcRenderer.invoke('item:saveMetadata', itemId, metadata),
-
-      // Read item metadata from file
-      readItemMetadata: (itemId) => ipcRenderer.invoke('item:readMetadata', itemId),
-
-      // Delete item metadata file
-      deleteItemMetadata: (itemId) => ipcRenderer.invoke('item:deleteMetadata', itemId),
-
-      // Save items index
-      saveItemsIndex: (index) => ipcRenderer.invoke('item:saveIndex', index),
-
-      // Read items index
-      readItemsIndex: () => ipcRenderer.invoke('item:readIndex'),
-    },
-
-    // ============================================
     // File Move API (for moving files between folders)
     // ============================================
     fileAPI: {
       // Move a file from source path to target path
       moveFile: (sourcePath, targetPath) => ipcRenderer.invoke('file:moveFile', sourcePath, targetPath),
+
+      // Delete a file by path
+      deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
     },
 
     // ============================================

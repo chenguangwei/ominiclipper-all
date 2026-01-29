@@ -74,6 +74,7 @@ export interface ClassificationResult {
   item: ResourceItem;
   rule?: ClassificationRule;
   category?: string;         // AI 分类类别
+  folderId?: string;         // Mapped Folder ID
   subfolder?: string;        // 子文件夹
   confidence?: number;       // 置信度 (0-1)
   reasoning?: string;        // 分类理由
@@ -90,6 +91,7 @@ export interface AIClassifierConfig {
   apiBaseUrl?: string;
   temperature?: number;       // 0-1, 越低越确定性
   maxTokens?: number;
+  language?: string;          // User prefered language (e.g. 'zh', 'en')
 }
 
 // LLM 提供商类型

@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ResourceItem, FilterState, FileStorageMode, ResourceType } from '@/types';
 import * as storageService from '@/services/storageService';
-import * as itemMetaService from '@/services/itemMetadataService';
 import { extractContentSnippet } from '@/services/contentExtractionService';
 import { importSingleFile, classifyAndImportFile, BatchImportFile } from '@/services/batchImportService';
 
@@ -217,7 +216,7 @@ export const useDragDrop = (
             }
 
             await storageService.flushPendingWrites();
-            setItems([...storageService.getItems()]);
+            setItems([...storageService.getItemsAsResourceItems()]);
         } catch (error) {
             console.error('[useDragDrop] Exception dropping file on folder:', error);
             showBrowserModeWarning(`Import exception: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -261,7 +260,7 @@ export const useDragDrop = (
         }
 
         await storageService.flushPendingWrites();
-        setItems([...storageService.getItems()]);
+        setItems([...storageService.getItemsAsResourceItems()]);
         setFolders([...storageService.getFolders()]); // Sync folders
         setTags([...storageService.getTags()]);       // Sync tags
         setPendingDropFile(null);
@@ -312,7 +311,7 @@ export const useDragDrop = (
         }
 
         await storageService.flushPendingWrites();
-        setItems([...storageService.getItems()]);
+        setItems([...storageService.getItemsAsResourceItems()]);
         setFolders([...storageService.getFolders()]); // Sync folders
         setTags([...storageService.getTags()]);       // Sync tags
         setPendingDropFolder(null);

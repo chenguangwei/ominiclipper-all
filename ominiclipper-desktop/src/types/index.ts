@@ -56,9 +56,10 @@ export interface ResourceItem {
   storageMode?: FileStorageMode; // 'embed' = Base64 embedded, 'reference' = path only
   embeddedData?: string; // Base64 encoded file content (for embed mode)
   originalPath?: string; // Original file path/name for reference
-  source?: 'desktop' | 'browser-extension'; // Data source
   thumbnailUrl?: string; // Cached thumbnail data URL for grid view
   description?: string; // Auto-generated or manual description from content
+  fileHash?: string; // SHA-256 hash for deduplication
+  deletedAt?: string; // ISO date string if in trash
 }
 
 // File system entry for file browser

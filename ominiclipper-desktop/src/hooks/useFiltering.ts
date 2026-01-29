@@ -30,6 +30,22 @@ export const useFiltering = (
         const hasSemanticResults = isSemanticSearchEnabled && semanticSearchResults.length > 0;
 
         let result = items.filter(item => {
+            // Soft Delete / Trash Logic
+            const isTrashView = filterState.folderId === 'trash';
+            const isDeleted = !!item.deletedAt;
+
+            // If in trash view, ONLY show deleted items
+            if (isTrashView) {
+                return isDeleted;
+            }
+
+            // If NOT in trash view, hide deleted items
+            if (isDeleted) {
+                return false;
+            }
+
+            // Standard Filtering (only for non-deleted items)
+
             // Search filter - use hybrid approach (semantic + keyword)
             if (filterState.search) {
                 const keywordMatch = item.title.toLowerCase().includes(filterState.search.toLowerCase()) ||
@@ -70,8 +86,6 @@ export const useFiltering = (
             // Folder logic
             if (filterState.folderId === 'all') {
                 return true;
-            } else if (filterState.folderId === 'trash') {
-                return false;
             } else if (filterState.folderId === 'uncategorized') {
                 return !item.folderId;
             } else if (filterState.folderId === 'untagged') {

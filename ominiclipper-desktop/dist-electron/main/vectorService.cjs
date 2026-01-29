@@ -157,13 +157,51 @@ async function initialize(userDataPath, modelId = DEFAULT_MODEL_ID) {
     const tableName = config.tableName;
     console.log('[VectorService] Using table:', tableName);
 
-    const tables = await db.tableNames();
-    if (tables.includes(tableName)) {
-      table = await db.openTable(tableName);
-      const count = await table.countRows();
-      console.log('[VectorService] Opened existing table with', count, 'documents');
+    let tableExists = false;
+    try {
+      const tables = await db.tableNames();
+      tableExists = tables.includes(tableName);
+    } catch (e) {
+      console.warn('[VectorService] Failed to list tables:', e);
+    }
 
-      // Basic schema check could go here if needed
+    if (tableExists) {
+      try {
+        table = await db.openTable(tableName);
+        const count = await table.countRows();
+        console.log('[VectorService] Opened existing table with', count, 'documents');
+      } catch (err) {
+        console.error('[VectorService] Failed to open existing table (corruption detected?):', err.message);
+
+        // Check for specific corruption markers (e.g. missing _versions)
+        // User reported:  Not found: .../_versions
+        if (err.message.includes('_versions') || err.message.includes('not found') || err.message.includes('No such file')) {
+          console.warn('[VectorService] Table corruption detected. Dropping table to recreate:', tableName);
+          try {
+            await db.dropTable(tableName);
+            console.log('[VectorService] Dropped corrupted table:', tableName);
+            table = null; // Proceed to creation block
+          } catch (dropErr) {
+            console.error('[VectorService] Failed to drop corrupted table. Attempting manual cleanup:', dropErr);
+            // Fallback: try to delete directory manually if drop fails
+            const tablePath = path.join(dbPath, tableName + '.lance');
+            if (fs.existsSync(tablePath)) {
+              try {
+                fs.rmSync(tablePath, { recursive: true, force: true });
+                console.log('[VectorService] Manually deleted corrupted table directory:', tablePath);
+                table = null;
+              } catch (rmErr) {
+                console.error('[VectorService] Failed to manually delete corrupted table:', rmErr);
+                throw new Error('Database corruption could not be fixed automatically. Please delete the "OmniCollector/vector.lance" folder manually.');
+              }
+            } else {
+              table = null;
+            }
+          }
+        } else {
+          throw err; // Re-throw unrelated errors
+        }
+      }
     } else {
       console.log('[VectorService] Table does not exist, will create on first insert');
       table = null;

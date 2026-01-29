@@ -52,7 +52,7 @@ function setMigrationVersion(version: number): void {
  * 3. Updates the item with the new localPath
  */
 export async function migrateEmbeddedFilesToDisk(): Promise<{ migrated: number; failed: number }> {
-  const items = storageService.getItems();
+  const items = storageService.getItemsAsResourceItems();
   let migrated = 0;
   let failed = 0;
 

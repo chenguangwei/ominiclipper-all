@@ -18,6 +18,7 @@ declare global {
             saveEmbeddedFile: (base64Data: string, fileName: string, itemId: string | null) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
             importFileToIdStorage: (sourcePath: string, itemId: string) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
             exportFile: (sourcePath: string, targetDir: string, targetFileName: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+            deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 
             // Shell operations
             openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
@@ -37,19 +38,10 @@ declare global {
                 migrate: (legacyData: any) => Promise<{ success: boolean; error?: string }>;
             };
 
-            // Item API (Eagle-style logic)
-            itemAPI: {
-                getItemsPath: () => Promise<string>;
-                saveItemMetadata: (itemId: string, metadata: any) => Promise<{ success: boolean; path?: string; error?: string }>;
-                readItemMetadata: (itemId: string) => Promise<any>;
-                deleteItemMetadata: (itemId: string) => Promise<{ success: boolean; error?: string }>;
-                saveItemsIndex: (index: any) => Promise<{ success: boolean; error?: string }>;
-                readItemsIndex: () => Promise<any>;
-            };
-
             // File Storage API
             fileStorageAPI?: {
                 getStoragePath: () => Promise<string>;
+                getFilesPath: () => Promise<string>;
                 createItemStorage: (itemId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
                 saveFileToStorage: (itemId: string, fileName: string, base64Data: string) => Promise<{ success: boolean; path?: string; error?: string }>;
                 readFileFromStorage: (itemId: string, fileName: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;

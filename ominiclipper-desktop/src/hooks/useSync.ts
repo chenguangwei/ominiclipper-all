@@ -42,6 +42,7 @@ export const useSync = (
                     tags: item.tags || [],
                     folderId: item.folder_id,
                     color: item.color || 'tag-blue',
+                    isStarred: false,
                     createdAt: item.created_at,
                     updatedAt: item.updated_at,
                     path: item.path,
@@ -49,7 +50,7 @@ export const useSync = (
                     contentSnippet: item.content_snippet,
                 }));
 
-                const localItems = storageService.getItems();
+                const localItems = storageService.getItemsAsResourceItems();
                 const mergedItems = [...cloudItems];
 
                 localItems.forEach(localItem => {
@@ -86,7 +87,7 @@ export const useSync = (
             const newItems = [item, ...items];
             storageService.saveItems(newItems);
             await storageService.flushPendingWrites();
-            setItems([...storageService.getItems()]);
+            setItems([...storageService.getItemsAsResourceItems()]);
             console.log('[App] Synced item from browser extension:', item.title);
         };
 
