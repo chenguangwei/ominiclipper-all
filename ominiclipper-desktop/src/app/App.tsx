@@ -200,6 +200,7 @@ const App: React.FC = () => {
 
           const descendantTagIds = getDescendantTags(t.id, tags);
           const count = items.filter(i => {
+            if (i.deletedAt) return false; // Exclude trashed items
             if (i.tags.includes(t.id)) return true;
             // Check if item has any of the descendant tags
             return i.tags.some(tagId => descendantTagIds.includes(tagId));
@@ -222,6 +223,7 @@ const App: React.FC = () => {
 
           const descendantIds = getDescendants(f.id, folders);
           const count = items.filter(i => {
+            if (i.deletedAt) return false; // Exclude trashed items
             if (i.folderId === f.id) return true;
             return i.folderId && descendantIds.includes(i.folderId);
           }).length;

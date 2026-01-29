@@ -9,7 +9,7 @@ import {
   AIClassifierConfig,
   LLMProviderType
 } from '../types/classification';
-import { getFolders } from './storage/tags_folders';
+import { getFolders, getTags } from './storage/tags_folders';
 import i18next from 'i18next';
 import llmProviderService from './llmProvider';
 
@@ -26,23 +26,28 @@ File Info:
 
 Output Language: {{language}}
 
+
 Return JSON strictly:
 {
   "category": "Category Name (MUST be one of: {{categories}})",
-  "subfolder": "Subfolder Name (e.g., 2024, Tech/React, Work/Projects)",
+  "subfolder": "Subfolder path (prefer from {{existingSubfolders}} or create new like Category/SubName)",
   "confidence": 0.95,
   "reasoning": "Short justification in {{language}}",
-  "suggestedTags": ["Tag1", "Tag2"],
+  "suggestedTags": ["Tag1", "Tag2"] (prefer from existing: {{existingTags}}, or add new if needed),
   "priority": "high"
 }
 
 IMPORTANT:
 1. Return JSON ONLY.
-2. "category" MUST be one of the keys listed above in {{language}}.
-3. "subfolder" should use forward slashes / for depth.
-4. "suggestedTags" MUST be in {{language}}.
-5. "reasoning" MUST be in {{language}}.
+2. "category" MUST be one of the keys listed in {{categories}}.
+3. "subfolder" should use forward slashes / for depth. Prefer existing paths.
+4. "suggestedTags" prefer reusing from {{existingTags}} to avoid duplication.
+5. "reasoning" and "suggestedTags" MUST be in {{language}}.
 6. If info is insufficient, lower confidence.`;
+
+// Available Top-Level Categories: {{categories}}
+// Existing Subfolders: {{existingSubfolders}}
+// Existing Tags: {{existingTags}}
 
 interface ParsedClassificationResult {
   category: string;
@@ -369,8 +374,30 @@ class AIClassifier {
       : 'Unknown';
 
     const folders = getFolders();
-    const categoryNames = folders.map(f =>
+    const tags = getTags();
+
+    // L1 categories: folders with no parentId
+    const l1Categories = folders.filter(f => !f.parentId);
+    const categoryNames = l1Categories.map(f =>
       i18next.t(`initial_folders.${f.id}`, { defaultValue: f.name })
+    ).join(', ');
+
+    // Nested subfolders: build full paths for folders with parentId
+    const subfolderPaths: string[] = [];
+    const buildPath = (folderId: string): string => {
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder) return '';
+      const parent = folder.parentId ? buildPath(folder.parentId) : '';
+      return parent ? `${parent}/${folder.name}` : folder.name;
+    };
+    folders.filter(f => f.parentId).forEach(f => {
+      subfolderPaths.push(buildPath(f.id));
+    });
+    const existingSubfolders = subfolderPaths.length > 0 ? subfolderPaths.join(', ') : 'None';
+
+    // Existing tags
+    const existingTagNames = tags.map(t =>
+      i18next.t(`initial_tags.${t.id}`, { defaultValue: t.name })
     ).join(', ');
 
     const replacements: Record<string, string> = {
@@ -380,7 +407,9 @@ class AIClassifier {
       '{{contentSnippet}}': item.contentSnippet || '无内容摘要',
       '{{tags}}': item.tags.length > 0 ? item.tags.join(', ') : '无标签',
       '{{language}}': this.config?.language === 'zh_CN' ? 'Chinese (Simplified)' : 'English',
-      '{{categories}}': categoryNames
+      '{{categories}}': categoryNames,
+      '{{existingSubfolders}}': existingSubfolders,
+      '{{existingTags}}': existingTagNames || 'None'
     };
 
     for (const [placeholder, value] of Object.entries(replacements)) {
