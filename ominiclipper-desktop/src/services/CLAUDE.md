@@ -21,4 +21,19 @@
 | #985 | 6:59 PM | 🔵 | Model Deployment Strategy Discovery - Hybrid Local/Network Approach | ~315 |
 | #984 | " | 🔵 | Complete Hybrid Search Architecture with Electron IPC | ~286 |
 | #983 | " | 🔵 | Current Implementation Uses Transformers.js with all-MiniLM-L6-v2 | ~237 |
+
+### Jan 30, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #1033 | 6:19 PM | 🔵 | Root Cause: Deferred Table Creation Pattern | ~377 |
+| #1032 | " | 🔵 | Hybrid Search Service Architecture | ~231 |
+| #1031 | " | 🔵 | Dynamic Import Pattern for Indexing | ~288 |
+| #1021 | 6:17 PM | 🔵 | MigrationService is for File Migration, Not Database | ~245 |
+| #1020 | " | 🔵 | Indexing Pipeline Flow Identified | ~258 |
+| #1019 | 6:16 PM | 🔵 | VectorStore is Renderer-Side IPC Wrapper | ~250 |
+| #1018 | " | 🔵 | Examining Indexing Service | ~215 |
+| #1016 | " | 🔵 | Found Migration Service | ~191 |
+| #1015 | " | 🔵 | Investigating VectorStore Service Structure | ~212 |
+| #1014 | " | 🔵 | Missing Database Tables During File Import | ~352 |
 </claude-mem-context>

@@ -35,15 +35,21 @@ const DEFAULT_OPTIONS = {
  * @param {object} options - Chunking options
  * @returns {Array<{id: string, text: string, index: number}>}
  */
+/**
+ * Split text into chunks
+ * @param {string} text - Text to split
+ * @param {object} options - Chunking options
+ * @returns {Array<{id: string, text: string, index: number}>}
+ */
 function splitIntoChunks(text, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const { chunkSize, chunkOverlap, minChunkSize, separators } = opts;
+  const { chunkSize, chunkOverlap } = opts;
 
   if (!text || typeof text !== 'string') {
     return [];
   }
 
-  // Clean and normalize text
+  // Clean text
   const cleanText = text
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '')
@@ -57,83 +63,89 @@ function splitIntoChunks(text, options = {}) {
     }];
   }
 
+  // Use Intl.Segmenter for word-aware splitting (crucial for Chinese)
+  let segmenter;
+  try {
+    segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+  } catch (e) {
+    // Fallback if not available
+  }
+
   const chunks = [];
-  let startIndex = 0;
+  let currentChunk = '';
+  let currentLength = 0;
 
-  while (startIndex < cleanText.length) {
-    // Find the end of this chunk
-    let endIndex = startIndex + chunkSize;
+  // If segmenter exists, split by words first
+  if (segmenter) {
+    const segments = segmenter.segment(cleanText);
+    const words = [];
+    for (const seg of segments) {
+      words.push(seg.segment);
+    }
 
-    // If we're not at the end, try to split at a good boundary
-    if (endIndex < cleanText.length) {
-      // Try each separator from most preferred to least
-      let foundSeparator = false;
-      for (const separator of separators) {
-        if (!separator) break; // Empty separator means character level
+    // Accumulate words into chunks
+    let currentWords = [];
 
-        // Look for separator in the range (startIndex, endIndex]
-        const searchRange = cleanText.slice(startIndex, endIndex);
-        const lastSepIndex = searchRange.lastIndexOf(separator);
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      if (currentLength + word.length > chunkSize && currentWords.length > 0) {
+        // Chunk is full
+        const chunkText = currentWords.join('');
+        chunks.push({
+          id: crypto.randomUUID(),
+          text: chunkText,
+          index: chunks.length
+        });
 
-        if (lastSepIndex > minChunkSize - separator.length) {
-          // Found a good split point
-          endIndex = startIndex + lastSepIndex + separator.length;
-          foundSeparator = true;
-          break;
+        // Handle overlap: keep last N chars of content (approx)
+        // For simplicity with word array, we keep last K words that fit in overlap
+        // But converting overlap chars to words is hard. 
+        // Simpler strategy: Just start new chunk with empty. 
+        // Better strategy for overlap: sliding window.
+
+        // Sliding window implementation:
+        // Backtrack 'overlap' characters worth of words
+        let overlapBuffer = '';
+        let backtrackIndex = i - 1;
+        let overlapWords = [];
+
+        while (backtrackIndex >= 0) {
+          const w = words[backtrackIndex];
+          if (overlapBuffer.length + w.length > chunkOverlap) break;
+          overlapBuffer = w + overlapBuffer;
+          overlapWords.unshift(w);
+          backtrackIndex--;
         }
+
+        currentWords = [...overlapWords];
+        currentLength = overlapBuffer.length;
       }
 
-      // If no good separator found, try to split at a space near the end
-      if (!foundSeparator) {
-        const lastSpaceIndex = cleanText.lastIndexOf(' ', endIndex);
-        if (lastSpaceIndex > startIndex + minChunkSize) {
-          endIndex = lastSpaceIndex;
-        }
-      }
+      currentWords.push(word);
+      currentLength += word.length;
     }
 
-    // Extract chunk
-    let chunkText = cleanText.slice(startIndex, endIndex).trim();
-
-    // If chunk is too small, try to extend it
-    if (chunkText.length < minChunkSize && endIndex < cleanText.length) {
-      const nextSpaceIndex = cleanText.indexOf(' ', endIndex);
-      if (nextSpaceIndex !== -1 && nextSpaceIndex < endIndex + 100) {
-        endIndex = nextSpaceIndex;
-        chunkText = cleanText.slice(startIndex, endIndex).trim();
-      }
-    }
-
-    // Ensure we always make progress
-    if (chunkText.length === 0 && startIndex < cleanText.length) {
-      endIndex = startIndex + chunkSize;
-      chunkText = cleanText.slice(startIndex, endIndex).trim();
-    }
-
-    if (chunkText) {
+    // Add final chunk
+    if (currentWords.length > 0) {
       chunks.push({
         id: crypto.randomUUID(),
-        text: chunkText,
-        index: chunks.length,
+        text: currentWords.join(''),
+        index: chunks.length
       });
     }
 
-    // Move start index, accounting for overlap
-    startIndex = endIndex - chunkOverlap;
-
-    // Ensure we don't get stuck in an infinite loop
-    if (startIndex >= cleanText.length) {
-      break;
-    }
-
-    // Move start index forward past any separator at the boundary
-    while (startIndex < cleanText.length && separators.some(s => cleanText[startIndex] === s)) {
-      startIndex++;
-    }
-
-    // Ensure we make progress
-    if (chunks.length > 0 && startIndex <= chunks[chunks.length - 1].index * chunkSize) {
-      startIndex = chunks[chunks.length - 1].index * chunkSize + chunkSize;
+  } else {
+    // Fallback to original regex logic (omitted here for brevity, assuming V8 always has Intl)
+    // Actually, let's keep a simplified character slicer as fallback
+    let startIndex = 0;
+    while (startIndex < cleanText.length) {
+      let endIndex = Math.min(startIndex + chunkSize, cleanText.length);
+      chunks.push({
+        id: crypto.randomUUID(),
+        text: cleanText.slice(startIndex, endIndex),
+        index: chunks.length
+      });
+      startIndex += (chunkSize - chunkOverlap);
     }
   }
 

@@ -1,117 +1,136 @@
 // src/services/hybridSearchService.ts
+//
+// Hybrid Search Service - Combines Vector (semantic) + BM25 (keyword) search
+// Uses vectorStoreService which handles IPC communication with Electron main process
 
+import { vectorStoreService, VectorSearchResult } from './vectorStoreService';
 import { SearchResult } from '../types/chat';
-
-
-
-interface VectorSearchResult {
-  id: string;
-  text: string;
-  score: number;
-  metadata: {
-    title: string;
-    type: string;
-    tags: string[];
-    createdAt: string;
-  };
-}
 
 export interface HybridSearchOptions {
   query: string;
   limit?: number;
   vectorWeight?: number;
   bm25Weight?: number;
+  minScore?: number;     // Minimum RRF score threshold (0.0 - 1.0)
+                          // Note: For RRF scores, use lower values like 0.005
+  groupByDoc?: boolean;  // Group results by document ID
 }
 
 export class HybridSearchService {
+  /**
+   * Perform hybrid search combining vector similarity and BM25 keyword matching
+   *
+   * @param opts Search options including query, limits, weights, and confidence threshold
+   * @returns Search results filtered by confidence threshold
+   */
   async search(opts: HybridSearchOptions): Promise<SearchResult[]> {
-    const { query, limit = 5, vectorWeight = 0.6, bm25Weight = 0.4 } = opts;
+    const {
+      query,
+      limit = 5,
+      vectorWeight = 0.6,
+      bm25Weight = 0.4,
+      minScore = 0.005,  // Lower threshold for RRF scores (0.6 * 1/61 ≈ 0.01 for rank 1)
+      groupByDoc = true
+    } = opts;
 
-    // 权重归一化
-    const totalWeight = vectorWeight + bm25Weight;
-    const normalizedVWeight = totalWeight > 0 ? vectorWeight / totalWeight : 0.6;
-    const normalizedBWeight = totalWeight > 0 ? bm25Weight / totalWeight : 0.4;
+    if (!query.trim()) {
+      return [];
+    }
 
     try {
-      const [vectorResults, bm25Results] = await Promise.all([
-        this.vectorSearch(query, limit * 2),
-        this.bm25Search(query, limit * 2),
-      ]);
+      console.log('[HybridSearch] Searching:', query, 'minScore:', minScore);
 
-      return this.fuseResults(
-        vectorResults,
-        bm25Results,
-        normalizedVWeight,
-        normalizedBWeight,
-        limit
+      // Use vectorStoreService which handles both Vector and BM25 search
+      // Request more results than needed to allow for confidence filtering
+      const results = await vectorStoreService.hybridSearch(
+        query,
+        limit * 2,  // Get extra results for filtering
+        vectorWeight,
+        bm25Weight,
+        groupByDoc
       );
+
+      console.log('[HybridSearch] Raw results:', results?.length || 0);
+
+      if (!results || results.length === 0) {
+        console.log('[HybridSearch] No results found');
+        return [];
+      }
+
+      // Filter by confidence threshold and convert to SearchResult format
+      const filtered = results
+        .filter(r => {
+          const passThreshold = r.score >= minScore;
+          if (!passThreshold) {
+            console.log(`[HybridSearch] Filtered out: "${r.metadata?.title}" (score: ${r.score.toFixed(3)} < ${minScore})`);
+          }
+          return passThreshold;
+        })
+        .slice(0, limit)
+        .map(r => this.toSearchResult(r));
+
+      console.log('[HybridSearch] After filtering:', filtered.length, 'results');
+      return filtered;
     } catch (error) {
       console.error('[HybridSearch] Search failed:', error);
-      // 返回空数组而不是崩溃
       return [];
     }
   }
 
-  protected async vectorSearch(query: string, limit: number): Promise<SearchResult[]> {
-    try {
-      // 调用 Electron 主进程的向量搜索
-      const results = await window.electronAPI?.vectorAPI?.search(query, limit);
-      if (!results || results.length === 0) {
-        console.log('[HybridSearch] No vector results found');
-        return [];
-      }
+  /**
+   * Perform vector-only semantic search
+   * Useful for testing or when keyword matching is not desired
+   */
+  async vectorSearch(query: string, limit: number, minScore = 0.1): Promise<SearchResult[]> {
+    if (!query.trim()) return [];
 
-      // 转换为 SearchResult 格式
-      return results.map((r: VectorSearchResult) => ({
-        id: r.id,
-        title: r.metadata?.title || 'Untitled',
-        type: r.metadata?.type || 'unknown',
-        text: r.text || '',
-        score: 1 - (r.score || 0), // LanceDB 返回的是距离，转换为相似度
-      }));
+    try {
+      console.log('[HybridSearch] Vector-only search:', query);
+      const results = await vectorStoreService.search(query, limit * 2);
+
+      return results
+        .filter(r => r.score >= minScore)
+        .slice(0, limit)
+        .map(r => this.toSearchResult(r));
     } catch (error) {
       console.error('[HybridSearch] Vector search failed:', error);
       return [];
     }
   }
 
-  protected async bm25Search(query: string, limit: number): Promise<SearchResult[]> {
-    // BM25 搜索作为补充，目前返回空数组
-    // 未来可以集成 SQLite FTS5 或其他全文搜索
-    return [];
+  /**
+   * Perform BM25-only keyword search
+   * Uses SQLite FTS5 full-text search via Electron main process
+   */
+  async bm25Search(query: string, limit: number): Promise<SearchResult[]> {
+    if (!query.trim()) return [];
+
+    try {
+      console.log('[HybridSearch] BM25-only search:', query);
+      const results = await vectorStoreService.bm25Search(query, limit);
+
+      console.log('[HybridSearch] BM25 results:', results?.length || 0);
+      return results.map(r => this.toSearchResult(r));
+    } catch (error) {
+      console.error('[HybridSearch] BM25 search failed:', error);
+      return [];
+    }
   }
 
-  protected fuseResults(
-    vector: SearchResult[],
-    bm25: SearchResult[],
-    vWeight: number,
-    bWeight: number,
-    limit: number
-  ): SearchResult[] {
-    const scoreMap = new Map<string, number>();
-    const sourceMap = new Map<string, SearchResult>();
-
-    // 处理向量结果
-    vector.forEach((r, i) => {
-      const score = vector.length > 0 ? (1 - i / vector.length) * vWeight : 0;
-      scoreMap.set(r.id, (scoreMap.get(r.id) || 0) + score);
-      sourceMap.set(r.id, r);
-    });
-
-    // 处理 BM25 结果
-    bm25.forEach((r, i) => {
-      const score = bm25.length > 0 ? (1 - i / bm25.length) * bWeight : 0;
-      scoreMap.set(r.id, (scoreMap.get(r.id) || 0) + score);
-      sourceMap.set(r.id, r);
-    });
-
-    // 排序并返回 Top-K，安全处理可能的 undefined
-    return Array.from(scoreMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([id]) => sourceMap.get(id))
-      .filter((r): r is SearchResult => r !== undefined);
+  /**
+   * Convert VectorSearchResult to SearchResult format
+   * Used by AIAssistant and other consumers
+   */
+  private toSearchResult(r: VectorSearchResult): SearchResult {
+    return {
+      id: r.id,
+      title: r.metadata?.title || 'Untitled',
+      type: r.metadata?.type || 'unknown',
+      text: r.text || '',
+      score: r.score,
+    };
   }
 }
 
+// Singleton export
 export const hybridSearchService = new HybridSearchService();

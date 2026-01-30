@@ -39,6 +39,8 @@ export interface VectorIndexDocument {
     title: string;
     type: string;
     tags: string[];
+    folderName?: string;   // Folder name for BM25 weighting (10x)
+    folderId?: string;
     createdAt: string;
   };
 }
@@ -213,8 +215,8 @@ class VectorStoreService {
   async hybridSearch(
     query: string,
     limit = 10,
-    vectorWeight = 0.7,
-    bm25Weight = 0.3,
+    vectorWeight = 0.3,
+    bm25Weight = 0.7,
     groupByDoc = true
   ): Promise<VectorSearchResult[]> {
     if (!isElectron || !window.electronAPI?.searchAPI) {

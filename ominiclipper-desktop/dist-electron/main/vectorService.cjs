@@ -157,54 +157,52 @@ async function initialize(userDataPath, modelId = DEFAULT_MODEL_ID) {
     const tableName = config.tableName;
     console.log('[VectorService] Using table:', tableName);
 
-    let tableExists = false;
-    try {
-      const tables = await db.tableNames();
-      tableExists = tables.includes(tableName);
-    } catch (e) {
-      console.warn('[VectorService] Failed to list tables:', e);
-    }
-
-    if (tableExists) {
+    const tables = await db.tableNames();
+    if (tables.includes(tableName)) {
       try {
         table = await db.openTable(tableName);
         const count = await table.countRows();
         console.log('[VectorService] Opened existing table with', count, 'documents');
       } catch (err) {
-        console.error('[VectorService] Failed to open existing table (corruption detected?):', err.message);
+        console.error('[VectorService] Failed to open existing table (corruption detected):', err);
+        console.log('[VectorService] Deleting corrupted table and recreating...');
 
-        // Check for specific corruption markers (e.g. missing _versions)
-        // User reported:  Not found: .../_versions
-        if (err.message.includes('_versions') || err.message.includes('not found') || err.message.includes('No such file')) {
-          console.warn('[VectorService] Table corruption detected. Dropping table to recreate:', tableName);
-          try {
-            await db.dropTable(tableName);
-            console.log('[VectorService] Dropped corrupted table:', tableName);
-            table = null; // Proceed to creation block
-          } catch (dropErr) {
-            console.error('[VectorService] Failed to drop corrupted table. Attempting manual cleanup:', dropErr);
-            // Fallback: try to delete directory manually if drop fails
-            const tablePath = path.join(dbPath, tableName + '.lance');
-            if (fs.existsSync(tablePath)) {
-              try {
-                fs.rmSync(tablePath, { recursive: true, force: true });
-                console.log('[VectorService] Manually deleted corrupted table directory:', tablePath);
-                table = null;
-              } catch (rmErr) {
-                console.error('[VectorService] Failed to manually delete corrupted table:', rmErr);
-                throw new Error('Database corruption could not be fixed automatically. Please delete the "OmniCollector/vector.lance" folder manually.');
-              }
-            } else {
-              table = null;
-            }
+        // Try to drop table or remove directory manually
+        try {
+          await db.dropTable(tableName);
+        } catch (dropErr) {
+          console.warn('[VectorService] Drop table failed, attempting manual cleanup:', dropErr);
+          const tablePath = path.join(dbPath, tableName + '.lance');
+          if (fs.existsSync(tablePath)) {
+            fs.rmSync(tablePath, { recursive: true, force: true });
           }
-        } else {
-          throw err; // Re-throw unrelated errors
         }
+        table = null; // Ensure we fall through to creation
       }
-    } else {
-      console.log('[VectorService] Table does not exist, will create on first insert');
-      table = null;
+    }
+
+    if (!table) {
+      // Eagerly create the table with empty data but proper schema
+      console.log('[VectorService] Table does not exist (or was reset), creating now...');
+      const vectorDim = config.dim;
+
+      const schema = new arrow.Schema([
+        new arrow.Field('id', new arrow.Utf8()),
+        new arrow.Field('doc_id', new arrow.Utf8()),
+        new arrow.Field('text', new arrow.Utf8()),
+        new arrow.Field('chunk_index', new arrow.Int32()),
+        new arrow.Field('vector', new arrow.FixedSizeList(vectorDim, new arrow.Field('item', new arrow.Float32()))),
+        new arrow.Field('title', new arrow.Utf8(), true),
+        new arrow.Field('type', new arrow.Utf8(), true),
+        new arrow.Field('tags', new arrow.Utf8(), true),
+        new arrow.Field('createdAt', new arrow.Utf8(), true),
+      ]);
+
+      // Create empty table with schema
+      // Note: createTable overwrites if exists usually, or check options.
+      // But we handled cleanup above.
+      table = await db.createTable(tableName, [], { schema, mode: 'overwrite' });
+      console.log('[VectorService] Table created successfully with schema');
     }
 
     isInitialized = true;

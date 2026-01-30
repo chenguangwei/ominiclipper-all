@@ -70,6 +70,45 @@ function removeExportDefaultPlugin() {
   };
 }
 
+// Plugin to copy additional .cjs files needed by electron main process
+function copyElectronCjsPlugin() {
+  return {
+    name: 'copy-electron-cjs',
+    closeBundle: () => {
+      const electronDir = resolve(__dirname, 'electron');
+      const distDir = resolve(__dirname, 'dist-electron/main');
+
+      if (!existsSync(distDir)) {
+        console.warn('dist-electron/main directory does not exist, skipping CJS copy');
+        return;
+      }
+
+      // Files to copy from electron directory
+      const filesToCopy = [
+        'textChunker.cjs',
+        'httpServer.cjs',
+        'embeddingModels.cjs',
+        'searchIndexManager.cjs',
+        'vectorService.cjs',
+        'chunkingService.cjs',
+        'tokenizer.cjs',
+      ];
+
+      for (const fileName of filesToCopy) {
+        const srcPath = resolve(electronDir, fileName);
+        const destPath = resolve(distDir, fileName);
+
+        if (existsSync(srcPath)) {
+          copyFileSync(srcPath, destPath);
+          console.log(`Copied ${fileName} to dist-electron/main/`);
+        } else {
+          console.warn(`File not found: ${srcPath}`);
+        }
+      }
+    }
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const isDev = mode === 'development';
@@ -93,7 +132,7 @@ export default defineConfig(({ mode }) => {
               options.startup()
             },
             vite: {
-              plugins: [removeExportDefaultPlugin()],
+              plugins: [removeExportDefaultPlugin(), copyElectronCjsPlugin()],
               build: {
                 sourcemap: isDev,
                 minify: isDev ? false : 'esbuild',

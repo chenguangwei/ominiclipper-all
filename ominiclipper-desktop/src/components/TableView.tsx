@@ -28,6 +28,24 @@ const TableView: React.FC<TableViewProps> = ({
   onOpen,
 }) => {
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+
+  // Drag handlers for moving items between folders
+  const handleItemDragStart = (e: React.DragEvent, item: ResourceItem) => {
+    const dragData = {
+      type: 'internal-item',
+      itemId: item.id,
+      itemTitle: item.title,
+      sourceView: 'table',
+    };
+    e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingItemId(item.id);
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggingItemId(null);
+  };
 
   const handleDoubleClick = (item: ResourceItem) => {
     if (onOpen) {
@@ -120,10 +138,13 @@ const TableView: React.FC<TableViewProps> = ({
               items.map(item => (
                 <tr
                   key={item.id}
+                  draggable
+                  onDragStart={(e) => handleItemDragStart(e, item)}
+                  onDragEnd={handleItemDragEnd}
                   onClick={() => onSelect(item.id)}
                   onDoubleClick={() => handleDoubleClick(item)}
                   onContextMenu={(e) => handleContextMenu(item.id, e)}
-                  className={`table-row cursor-pointer ${selectedId === item.id ? 'bg-primary/20' : ''}`}
+                  className={`table-row cursor-pointer ${selectedId === item.id ? 'bg-primary/20' : ''} ${draggingItemId === item.id ? 'opacity-50' : ''}`}
                 >
                   <td className="table-cell">
                     <div className="flex items-center gap-2">

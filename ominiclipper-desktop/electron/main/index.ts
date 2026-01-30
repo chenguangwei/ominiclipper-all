@@ -1680,8 +1680,16 @@ ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight:
       searchIndexManager.search(query, limit * 2, groupByDoc)
     ]);
 
+    // Detailed logging for debugging
+    console.log('[HybridSearch] Query:', query);
     console.log('[HybridSearch] Vector results:', vectorResults?.length || 0);
+    vectorResults?.forEach((r, i) => {
+      console.log(`  [Vector] rank=${i + 1}, id=${r.id?.substring(0, 20)}..., score=${r.score?.toFixed(6)}, title=${r.metadata?.title?.substring(0, 20)}`);
+    });
     console.log('[HybridSearch] BM25 results:', bm25Results?.length || 0);
+    bm25Results?.forEach((r, i) => {
+      console.log(`  [BM25] rank=${i + 1}, id=${r.id?.substring(0, 20)}..., score=${r.score?.toFixed(6)}, title=${r.title?.substring(0, 20)}`);
+    });
 
     // If NOT grouping by doc, we return separate chunks (simplified fusion)
     if (!groupByDoc) {
@@ -1689,11 +1697,17 @@ ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight:
 
       // Vector: score = distance. Convert to similarity (1-dist) * weight
       vectorResults.forEach(r => {
-        // Normalize vector score if not already normalized. 
-        // vectorService returns "distance" as "score".
-        // We assume < 1.0 is good.
-        let sim = 1 - r.score;
-        if (sim < 0) sim = 0;
+        // Normalize vector score (Distance) to Similarity [0, 1]
+        // Problem: High dimensional distance (0.5 vs 0.8) looks close but is semantically huge.
+        // Solution: Use a steeper curve with a strict cut-off at 0.75
+        // Mapping: 0.0 -> 1.0 (perfect), 0.75 -> 0.0 (unrelated)
+        let normalizedScore = Math.max(0, 1 - (r.score / 0.75));
+
+        // Square it to punish weak matches more (Non-linear differentiation)
+        // 0.3 distance -> (0.6)^2 = 0.36
+        // 0.55 distance -> (0.26)^2 = 0.06
+        // 0.8 distance -> 0
+        let sim = normalizedScore * normalizedScore;
 
         allChunks.push({
           ...r,
@@ -1717,19 +1731,36 @@ ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight:
 
     // Use Reciprocal Rank Fusion (RRF) to combine results
     const k = 60; // RRF constant
-    const scoreMap = new Map<string, { score: number; vectorRank?: number; bm25Rank?: number; data: any }>();
+    const scoreMap = new Map<string, { score: number; vectorRank?: number; vectorScore?: number; bm25Rank?: number; bm25Score?: number; data: any }>();
 
-    // Process vector results (lower _distance = better, so invert ranking)
+    // Process vector results (lower _distance = better)
+    // IMPORANT: Filter irrelevant vectors before RRF to prevent noise
+    // A distance > 0.65 usually means "somewhat related but not a good match" for this model
     if (Array.isArray(vectorResults)) {
       vectorResults.forEach((result, index) => {
+        // Strict filtering for RRF - TIGHTENED based on user feedback
+        // 0.738 was observed as noise. 0.65 was valid.
+        // Set cutoff to 0.72 to strictly exclude unrelated content.
+        if (result.score > 0.72) {
+          // Skip entirely if distance > 0.72
+          return;
+        }
+
         const id = result.id;
         const rrfScore = vectorWeight * (1 / (k + index + 1));
+
+        // Calculate similarity for display [0, 1]
+        // Use linear mapping to avoiding "crushing" valid scores
+        // Map 0.0 -> 1.0, 0.72 -> 0.0
+        let sim = Math.max(0, 1 - (result.score / 0.72));
+
         if (!scoreMap.has(id)) {
           scoreMap.set(id, { score: 0, data: result });
         }
         const entry = scoreMap.get(id)!;
         entry.score += rrfScore;
         entry.vectorRank = index + 1;
+        entry.vectorScore = sim; // Log the transformed similarity, not raw distance
       });
     }
 
@@ -1744,8 +1775,15 @@ ipcMain.handle('search:hybrid', async (event, { query, limit = 10, vectorWeight:
         const entry = scoreMap.get(id)!;
         entry.score += rrfScore;
         entry.bm25Rank = index + 1;
+        entry.bm25Score = result.score; // Raw BM25 score
       });
     }
+
+    // Log RRF calculation details
+    console.log('[HybridSearch] RRF calculation:');
+    scoreMap.forEach((entry, id) => {
+      console.log(`  [RRF] id=${id.substring(0, 20)}... vectorRank=${entry.vectorRank} (score=${entry.vectorScore?.toFixed(6)}), bm25Rank=${entry.bm25Rank} (score=${entry.bm25Score?.toFixed(6)}), finalScore=${entry.score.toFixed(6)}`);
+    });
 
     // Sort by combined RRF score and return top results
     const combinedResults = Array.from(scoreMap.entries())

@@ -8,6 +8,7 @@
 const path = require('path');
 const fs = require('fs');
 const { splitIntoChunks } = require('./textChunker.cjs');
+const { tokenize } = require('./tokenizer.cjs');
 
 // Use require for native module (more stable in Electron)
 let Database = null;
@@ -30,6 +31,122 @@ function loadModules() {
       throw e;
     }
   }
+}
+
+// Weight configuration for BM25 boosting
+const WEIGHTS = {
+  folderName: 10,   // Highest - user organized folders
+  category: 8,      // Document category
+  tags: 5,          // User tags
+  title: 3,         // Document title
+  h1: 3,            // Heading level 1
+  h2: 2,            // Heading level 2
+  h3: 1,            // Heading level 3
+  content: 1,       // Normal content
+};
+
+/**
+ * Extract headings from markdown text
+ * @param {string} text - Markdown text
+ * @returns {Object} - Object with h1, h2, h3 arrays
+ */
+function extractHeadings(text) {
+  const headings = { h1: [], h2: [], h3: [] };
+  const h1Regex = /^#\s+(.+)$/gm;
+  const h2Regex = /^##\s+(.+)$/gm;
+  const h3Regex = /^###\s+(.+)$/gm;
+
+  let match;
+  while ((match = h1Regex.exec(text)) !== null) {
+    headings.h1.push(match[1].trim());
+  }
+  while ((match = h2Regex.exec(text)) !== null) {
+    headings.h2.push(match[1].trim());
+  }
+  while ((match = h3Regex.exec(text)) !== null) {
+    headings.h3.push(match[1].trim());
+  }
+
+  return headings;
+}
+
+/**
+ * Convert text to markdown format (simple formatting for now)
+ * @param {string} text - Raw text
+ * @param {string} type - Document type
+ * @returns {string} - Markdown formatted text
+ */
+function convertToMarkdown(text, type) {
+  // For now, just return text as-is with basic formatting
+  // In the future, could add more sophisticated conversion based on type
+  return text;
+}
+
+/**
+ * Prepare document content for BM25 indexing with weighted boosting
+ *
+ * Strategy: Repeat important keywords multiple times to increase their BM25 score
+ * Priority: folderName > category > tags > title > headings > content
+ *
+ * @param {string} text - Original document text
+ * @param {Object} metadata - Document metadata
+ * @returns {string} - Prepared text for indexing
+ */
+function prepareForIndexing(text, metadata) {
+  let indexedContent = '';
+
+  // 1. Folder name (10x) - Highest weight, user organized folders
+  if (metadata.folderName) {
+    indexedContent += (metadata.folderName + ' ').repeat(WEIGHTS.folderName);
+    console.log(`[SearchIndex] Added folderName "${metadata.folderName}" (${WEIGHTS.folderName}x)`);
+  }
+
+  // 2. Category (8x)
+  if (metadata.category) {
+    indexedContent += (metadata.category + ' ').repeat(WEIGHTS.category);
+    console.log(`[SearchIndex] Added category "${metadata.category}" (${WEIGHTS.category}x)`);
+  }
+
+  // 3. Tags (5x each)
+  if (metadata.tags && metadata.tags.length > 0) {
+    for (const tag of metadata.tags) {
+      indexedContent += (tag + ' ').repeat(WEIGHTS.tags);
+    }
+    console.log(`[SearchIndex] Added tags [${metadata.tags.join(', ')}] (${WEIGHTS.tags}x each)`);
+  }
+
+  // 4. Document title (3x)
+  if (metadata.title) {
+    indexedContent += (metadata.title + ' ').repeat(WEIGHTS.title);
+    console.log(`[SearchIndex] Added title "${metadata.title}" (${WEIGHTS.title}x)`);
+  }
+
+  // 5. Convert to markdown and extract headings
+  const markdown = convertToMarkdown(text, metadata.type);
+  const headings = extractHeadings(markdown);
+
+  // 6. H1 headings (3x)
+  for (const h1 of headings.h1) {
+    indexedContent += (h1 + ' ').repeat(WEIGHTS.h1);
+  }
+
+  // 7. H2 headings (2x)
+  for (const h2 of headings.h2) {
+    indexedContent += (h2 + ' ').repeat(WEIGHTS.h2);
+  }
+
+  // 8. H3 headings (1x)
+  for (const h3 of headings.h3) {
+    indexedContent += (h3 + ' ').repeat(WEIGHTS.h3);
+  }
+
+  // 9. Original content (1x)
+  indexedContent += markdown;
+
+  // TOKENIZATION STEP:
+  // Apply the tokenizer to the entire prepared content to ensure Chinese segments are space-separated
+  // This is crucial for SQLite FTS5 'unicode61' or 'simple' tokenizer to work with CJK.
+  return tokenize(indexedContent);
 }
 
 /**
@@ -55,7 +172,7 @@ async function initialize(userDataPath) {
     // Enable WAL mode for better performance
     db.pragma('journal_mode = WAL');
 
-    // Create FTS5 virtual table with doc_id for chunking
+    // Create FTS5 virtual table with Unicode tokenization for Chinese support
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLE_NAME} USING fts5(
         id,
@@ -65,9 +182,7 @@ async function initialize(userDataPath) {
         type,
         tags,
         chunk_index,
-        content='',
-        content_rowid='id',
-        tokenize='porter unicode61'
+        tokenize='unicode61'
       );
     `);
 
@@ -93,12 +208,27 @@ async function indexDocument(docId, text, metadata) {
   }
 
   try {
-    // Split text into chunks for better search granularity
-    const chunks = splitIntoChunks(text, { chunkSize: 800, chunkOverlap: 100 });
+    // Log indexing details
+    console.log(`[SearchIndex] Indexing doc: ${docId}, text length: ${text?.length || 0}, title: ${metadata.title}`);
+
+    if (!text || text.trim().length < 10) {
+      console.warn(`[SearchIndex] WARNING: Empty or too short text for ${docId}`);
+      return { success: false, error: 'Text too short or empty' };
+    }
+
+    // Prepare content with weighted boosting for BM25
+    const indexedContent = prepareForIndexing(text, metadata);
+    console.log(`[SearchIndex] Prepared content length: ${indexedContent.length} chars`);
+
+    // Split prepared content into chunks for better search granularity
+    const chunks = splitIntoChunks(indexedContent, { chunkSize: 800, chunkOverlap: 100 });
 
     if (chunks.length === 0) {
       return { success: false, error: 'No content to index' };
     }
+
+    // Log first chunk preview
+    console.log(`[SearchIndex] First chunk preview: "${chunks[0]?.text?.substring(0, 100)}..."`);
 
     // Delete existing chunks for this document
     const deleteStmt = db.prepare(`DELETE FROM ${TABLE_NAME} WHERE doc_id = ?`);
@@ -158,8 +288,9 @@ async function deleteDocument(docId) {
  * Search documents using BM25 full-text search
  * @param {string} query - Search query
  * @param {number} limit - Max results (per document)
+ * @param {boolean} groupByDoc - Unused for BM25 (always per-doc currently), keeping interface compatible
  */
-async function search(query, limit = 5) {
+async function search(query, limit = 5, groupByDoc = true) {
   if (!db) {
     console.log('[SearchIndex] Search skipped: not initialized');
     return [];
@@ -167,8 +298,29 @@ async function search(query, limit = 5) {
 
   try {
     // FTS5 search with BM25 ranking
-    // Use query + '*' to enable prefix matching
-    const searchQuery = query.trim().split(/\s+/).join(' ') + '*';
+    // 1. Tokenize query using the same logic as indexing (for Chinese segmentation)
+    const tokenizedQuery = tokenize(query);
+
+    // 2. Clean up for search query syntax
+    const searchQuery = tokenizedQuery.trim().split(/\s+/).join(' '); // AND implicit in FTS5 standard query?
+    // Actually FTS standard query implies phrase if quoted, or AND/OR if keywords. 
+    // Ideally we want OR or AND depending on user intent. default FTS5 is implicit AND?
+    // Let's stick to simple space-separated which acts as implicit AND in most FTS5 usages (check docs, actually it is phrase search if "..." or implicit AND for terms).
+    // Wait, simple 'term1 term2' is implicit AND.
+
+    console.log(`[SearchIndex] Raw query: "${query}"`);
+    console.log(`[SearchIndex] Tokenized query: "${searchQuery}"`);
+
+    // First check what's in the database
+    const totalCount = db.prepare(`SELECT count(*) as count FROM ${TABLE_NAME}`).get();
+    console.log(`[SearchIndex] Total chunks in DB: ${totalCount.count}`);
+
+    // Check sample data
+    const sampleData = db.prepare(`SELECT doc_id, substr(text, 1, 50) as text_preview FROM ${TABLE_NAME} LIMIT 3`).all();
+    console.log(`[SearchIndex] Sample data:`);
+    sampleData.forEach((row, i) => {
+      console.log(`  [${i + 1}] doc_id: ${row.doc_id?.substring(0, 20)}..., text: "${row.text_preview}..."`);
+    });
 
     // Search for matching chunks, then aggregate by doc_id
     const rawStmt = db.prepare(`
@@ -187,6 +339,20 @@ async function search(query, limit = 5) {
     `);
 
     const rawResults = rawStmt.all(searchQuery, limit * 3);
+    console.log(`[SearchIndex] Raw BM25 results: ${rawResults.length}`);
+
+    // Optimization: If NOT grouping by doc, return raw chunks directly
+    if (!groupByDoc) {
+      console.log(`[SearchIndex] Raw results (no grouping): ${rawResults.length} chunks`);
+      return rawResults.slice(0, limit).map(r => ({
+        id: r.doc_id, // Keep consistent with vector service (id=docId) but logically it's a chunk match
+        chunk_id: r.id,
+        title: r.title || 'Untitled',
+        text: r.text || '',
+        type: r.type || 'document',
+        score: Math.max(0, 1 - (r.score || 0) / 100), // Normalize score roughly
+      }));
+    }
 
     // Aggregate results by doc_id, keeping best chunk per document
     const docMap = new Map();

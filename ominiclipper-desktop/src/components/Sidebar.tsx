@@ -22,6 +22,7 @@ interface SidebarProps {
   onDeleteFolder: (id: string) => void;
   onDeleteTag: (id: string) => void;
   onDropOnFolder?: (folderId: string, files: FileList) => void; // Callback when files dropped on folder
+  onMoveItemToFolder?: (itemId: string, targetFolderId: string) => Promise<void>; // Callback when item dragged to folder
   colorMode?: ColorMode;
 }
 
@@ -42,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteFolder,
   onDeleteTag,
   onDropOnFolder,
+  onMoveItemToFolder,
   colorMode = 'dark',
 }) => {
   const { t } = useTranslation();
@@ -127,6 +129,21 @@ const Sidebar: React.FC<SidebarProps> = ({
             e.preventDefault();
             e.stopPropagation();
             setDragOverFolderId(null);
+
+            // Check for internal item drag first
+            const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+            if (itemData && isDropTarget) {
+              try {
+                const { itemId, itemTitle } = JSON.parse(itemData);
+                console.log(`[Sidebar] Moving item "${itemTitle}" to folder ${id}`);
+                onMoveItemToFolder?.(itemId, id);
+              } catch (err) {
+                console.error('[Sidebar] Failed to parse item drag data:', err);
+              }
+              return;
+            }
+
+            // Fall back to OS file drop
             if (isDropTarget && onDropOnFolder && e.dataTransfer.files.length > 0) {
               onDropOnFolder(id, e.dataTransfer.files);
             }
@@ -216,7 +233,28 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="mb-4">
             <div
               onClick={() => { onSelectFolder('all'); onSelectTag(null); }}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'all' && !activeTagId ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDragOverFolderId('all');
+              }}
+              onDragLeave={() => setDragOverFolderId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverFolderId(null);
+                const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+                if (itemData) {
+                  try {
+                    const { itemId, itemTitle } = JSON.parse(itemData);
+                    console.log(`[Sidebar] Moving item "${itemTitle}" to All (removing folder)`);
+                    onMoveItemToFolder?.(itemId, 'all');
+                  } catch (err) {
+                    console.error('[Sidebar] Failed to parse item drag data:', err);
+                  }
+                }
+              }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'all' && !activeTagId ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'all' ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
             >
               <span className="w-4"></span>
               <Icon name="inbox" className={`text-[18px] ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-content-secondary'}`} />
@@ -226,7 +264,28 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             <div
               onClick={() => { onSelectFolder('uncategorized'); onSelectTag(null); }}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'uncategorized' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDragOverFolderId('uncategorized');
+              }}
+              onDragLeave={() => setDragOverFolderId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverFolderId(null);
+                const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+                if (itemData) {
+                  try {
+                    const { itemId, itemTitle } = JSON.parse(itemData);
+                    console.log(`[Sidebar] Moving item "${itemTitle}" to Uncategorized (removing folder)`);
+                    onMoveItemToFolder?.(itemId, 'uncategorized');
+                  } catch (err) {
+                    console.error('[Sidebar] Failed to parse item drag data:', err);
+                  }
+                }
+              }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'uncategorized' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'uncategorized' ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
             >
               <span className="w-4"></span>
               <Icon name="folder_off" className={`text-[18px] ${activeFolderId === 'uncategorized' ? 'text-white' : 'text-content-secondary'}`} />
@@ -244,7 +303,28 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             <div
               onClick={() => { onSelectFolder('trash'); onSelectTag(null); }}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'trash' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setDragOverFolderId('trash');
+              }}
+              onDragLeave={() => setDragOverFolderId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverFolderId(null);
+                const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+                if (itemData) {
+                  try {
+                    const { itemId, itemTitle } = JSON.parse(itemData);
+                    console.log(`[Sidebar] Moving item "${itemTitle}" to Trash`);
+                    onMoveItemToFolder?.(itemId, 'trash');
+                  } catch (err) {
+                    console.error('[Sidebar] Failed to parse item drag data:', err);
+                  }
+                }
+              }}
+              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'trash' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'trash' ? 'ring-2 ring-red-500 ring-inset bg-red-500/10' : ''}`}
             >
               <span className="w-4"></span>
               <Icon name="delete" className={`text-[18px] ${activeFolderId === 'trash' ? 'text-white' : 'text-content-secondary'}`} />

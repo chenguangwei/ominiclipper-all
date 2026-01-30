@@ -133,6 +133,32 @@ const App: React.FC = () => {
     });
   };
 
+  // Handler for moving items between folders via drag-drop
+  const handleMoveItemToFolder = async (itemId: string, targetFolderId: string) => {
+    console.log(`[App] Moving item ${itemId} to folder ${targetFolderId}`);
+
+    // Special folder handling
+    if (targetFolderId === 'trash') {
+      // Move to trash = soft delete
+      await storageService.deleteItem(itemId);
+    } else if (['starred', 'recent', 'untagged'].includes(targetFolderId)) {
+      // Virtual folders - cannot move items here
+      console.warn(`[App] Cannot move items to virtual folder: ${targetFolderId}`);
+      return;
+    } else {
+      // Normal folder or 'all'/'uncategorized' (which means remove folder)
+      const newFolderId = ['all', 'uncategorized'].includes(targetFolderId)
+        ? undefined
+        : targetFolderId;
+      await storageService.updateItem(itemId, { folderId: newFolderId });
+    }
+
+    // Refresh items list
+    const newItems = storageService.getItemsAsResourceItems();
+    setItems([...newItems]);
+    console.log(`[App] Item moved successfully`);
+  };
+
   // 7. Navigation & Highlighting
   const [highlightText, setHighlightText] = useState<string | null>(null);
 
@@ -251,6 +277,7 @@ const App: React.FC = () => {
           setTags([...storageService.getTags()]);
           setItems([...storageService.getItemsAsResourceItems()]);
         }}
+        onMoveItemToFolder={handleMoveItemToFolder}
         colorMode={colorMode}
       />
 

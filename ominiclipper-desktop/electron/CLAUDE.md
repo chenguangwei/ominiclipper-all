@@ -30,26 +30,6 @@
 | #774 | 6:09 PM | 🔵 | Examined vectorService.cjs for LanceDB API Issue | ~255 |
 | #757 | 1:52 PM | 🔴 | Critical Electron initialization bug discovered | ~310 |
 | #756 | 1:51 PM | 🔵 | Examined file path validation and error handling in file preview system | ~383 |
-| #755 | " | ✅ | Added documentation comment to main.cjs IPC handlers | ~221 |
-| #754 | " | 🔄 | Removed duplicate getMimeType function from main.cjs | ~239 |
-| #753 | " | 🟣 | BM25 search index manager initialized in main process | ~273 |
-| #752 | " | 🟣 | BM25 search IPC integration added to main process | ~277 |
-| #751 | " | 🔵 | BM25 search implementation found in main.cjs | ~282 |
-| #750 | " | 🟣 | BM25 search API handlers implemented in main branch | ~308 |
-| #749 | 1:50 PM | 🔵 | File read IPC handler implementation in main process | ~280 |
-| #727 | 1:37 PM | ✅ | Vector service copied and application rebuilt successfully | ~284 |
-| #726 | " | 🟣 | Enhanced vector service with schema migration and Apache Arrow support | ~314 |
-| #725 | " | 🔴 | Vector search schema switched to Apache Arrow format | ~310 |
-| #724 | " | 🟣 | Vector service enhanced with explicit schema management | ~315 |
-| #723 | 1:31 PM | ✅ | Updated LanceDB schema import pattern in vector service | ~309 |
-| #721 | 1:30 PM | 🔴 | Vector service schema validation and migration added | ~270 |
-| #720 | 1:29 PM | 🔴 | Vector database schema compatibility error with missing doc_id field | ~313 |
-| #719 | 1:26 PM | 🔴 | LanceDB table creation fixed with explicit schema definition | ~303 |
-| #718 | " | 🟣 | Added LanceDB schema definition for document chunks | ~297 |
-| #717 | " | 🔄 | Vector service schema definition moved inline for clarity | ~302 |
-| #716 | 1:25 PM | 🟣 | Vector service enhanced with intelligent text chunking | ~316 |
-| #710 | 11:25 AM | ✅ | Enhanced BM25 search with document chunking and aggregation | ~317 |
-| #709 | " | 🟣 | Enhanced search index with automatic text chunking | ~316 |
 
 ### Jan 22, 2026
 
@@ -67,4 +47,29 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #985 | 6:59 PM | 🔵 | Model Deployment Strategy Discovery - Hybrid Local/Network Approach | ~315 |
+
+### Jan 30, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #1054 | 7:04 PM | 🔵 | Text Chunking Uses Intl.Segmenter for Chinese Word Awareness | ~308 |
+| #1053 | 7:02 PM | 🔵 | Vector Search Score is Distance, Not Similarity | ~238 |
+| #1051 | 6:59 PM | 🔵 | Vector Search Score is Distance, Not Similarity | ~115 |
+| #1049 | 6:55 PM | 🔵 | LanceDB Table Schema Definition | ~285 |
+| #1048 | 6:33 PM | 🔵 | Dual LanceDB Tables for Different Embedding Models | ~292 |
+| #1047 | " | 🔵 | Investigating LanceDB Table Path Configuration | ~251 |
+| #1046 | 6:25 PM | 🔴 | Fixed SQLite FTS5 Tokenize Directive Syntax Error | ~283 |
+| #1045 | " | 🔵 | Investigating FTS Table Creation Logic | ~255 |
+| #1044 | " | 🔴 | FTS5 Tokenize Directive Syntax Error | ~256 |
+| #1043 | 6:22 PM | 🔵 | BM25 Text Duplication is Intentional Weighting | ~297 |
+| #1042 | 6:21 PM | 🔵 | BM25 prepareForIndexing Weighting Strategy | ~281 |
+| #1041 | " | ✅ | BM25 Indexing Uses Weighted Keyword Repetition | ~311 |
+| #1040 | " | 🔵 | BM25 Indexing Flow in searchIndexManager | ~262 |
+| #1038 | " | 🔵 | Investigating BM25 Indexing Debug Logging | ~233 |
+| #1037 | " | 🔵 | BM25 Indexing Intentional Keyword Repetition | ~282 |
+| #1036 | 6:20 PM | 🔴 | Fixed LanceDB Table Creation During Initialization | ~310 |
+| #1033 | 6:19 PM | 🔵 | Root Cause: Deferred Table Creation Pattern | ~377 |
+| #1027 | 6:18 PM | 🔵 | VectorService Lazy Table Creation Pattern Found | ~282 |
+| #1025 | 6:17 PM | 🔵 | Embedding Models Configuration | ~218 |
+| #1024 | " | 🔵 | SearchIndexManager Table Creation Logic Found | ~259 |
 </claude-mem-context>

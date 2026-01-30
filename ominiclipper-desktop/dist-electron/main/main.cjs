@@ -1310,13 +1310,22 @@ ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight:
       // Pass groupByDoc to bm25 search
       searchIndexManager.search(query, limit * 2, groupByDoc)
     ]);
+    console.log("[HybridSearch] Query:", query);
     console.log("[HybridSearch] Vector results:", (vectorResults == null ? void 0 : vectorResults.length) || 0);
+    vectorResults == null ? void 0 : vectorResults.forEach((r, i) => {
+      var _a, _b, _c, _d;
+      console.log(`  [Vector] rank=${i + 1}, id=${(_a = r.id) == null ? void 0 : _a.substring(0, 20)}..., score=${(_b = r.score) == null ? void 0 : _b.toFixed(6)}, title=${(_d = (_c = r.metadata) == null ? void 0 : _c.title) == null ? void 0 : _d.substring(0, 20)}`);
+    });
     console.log("[HybridSearch] BM25 results:", (bm25Results == null ? void 0 : bm25Results.length) || 0);
+    bm25Results == null ? void 0 : bm25Results.forEach((r, i) => {
+      var _a, _b, _c;
+      console.log(`  [BM25] rank=${i + 1}, id=${(_a = r.id) == null ? void 0 : _a.substring(0, 20)}..., score=${(_b = r.score) == null ? void 0 : _b.toFixed(6)}, title=${(_c = r.title) == null ? void 0 : _c.substring(0, 20)}`);
+    });
     if (!groupByDoc) {
       const allChunks = [];
       vectorResults.forEach((r) => {
-        let sim = 1 - r.score;
-        if (sim < 0) sim = 0;
+        let normalizedScore = Math.max(0, 1 - r.score / 0.75);
+        let sim = normalizedScore * normalizedScore;
         allChunks.push({
           ...r,
           score: sim * vectorWeight,
@@ -1336,14 +1345,19 @@ ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight:
     const scoreMap = /* @__PURE__ */ new Map();
     if (Array.isArray(vectorResults)) {
       vectorResults.forEach((result, index) => {
+        if (result.score > 0.72) {
+          return;
+        }
         const id = result.id;
         const rrfScore = vectorWeight * (1 / (k + index + 1));
+        let sim = Math.max(0, 1 - result.score / 0.72);
         if (!scoreMap.has(id)) {
           scoreMap.set(id, { score: 0, data: result });
         }
         const entry = scoreMap.get(id);
         entry.score += rrfScore;
         entry.vectorRank = index + 1;
+        entry.vectorScore = sim;
       });
     }
     if (Array.isArray(bm25Results)) {
@@ -1356,8 +1370,14 @@ ipcMain.handle("search:hybrid", async (event, { query, limit = 10, vectorWeight:
         const entry = scoreMap.get(id);
         entry.score += rrfScore;
         entry.bm25Rank = index + 1;
+        entry.bm25Score = result.score;
       });
     }
+    console.log("[HybridSearch] RRF calculation:");
+    scoreMap.forEach((entry, id) => {
+      var _a, _b;
+      console.log(`  [RRF] id=${id.substring(0, 20)}... vectorRank=${entry.vectorRank} (score=${(_a = entry.vectorScore) == null ? void 0 : _a.toFixed(6)}), bm25Rank=${entry.bm25Rank} (score=${(_b = entry.bm25Score) == null ? void 0 : _b.toFixed(6)}), finalScore=${entry.score.toFixed(6)}`);
+    });
     const combinedResults = Array.from(scoreMap.entries()).sort((a, b) => b[1].score - a[1].score).slice(0, limit).map(([id, { score, vectorRank, bm25Rank, data }]) => ({
       id,
       text: data.text || "",

@@ -19,12 +19,31 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [contextMenuTarget, setContextMenuTarget] = useState<ResourceItem | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+
   const handleDoubleClick = (item: ResourceItem) => {
     if (onOpen) {
       onOpen(item);
     }
   };
   const isLight = colorMode === 'light';
+
+  // Drag handlers for moving items between folders
+  const handleItemDragStart = (e: React.DragEvent, item: ResourceItem) => {
+    const dragData = {
+      type: 'internal-item',
+      itemId: item.id,
+      itemTitle: item.title,
+      sourceView: 'grid',
+    };
+    e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingItemId(item.id);
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggingItemId(null);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, item: ResourceItem) => {
     e.preventDefault();
@@ -122,10 +141,13 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
         {items.map(item => (
             <div
               key={item.id}
+              draggable
+              onDragStart={(e) => handleItemDragStart(e, item)}
+              onDragEnd={handleItemDragEnd}
               onClick={() => onSelect(item.id)}
               onDoubleClick={() => handleDoubleClick(item)}
               onContextMenu={(e) => handleContextMenu(e, item)}
-              className={`group flex flex-col rounded-xl p-4 transition-all duration-200 cursor-pointer border ${selectedId === item.id ? 'bg-primary/20 border-primary/50 ring-2 ring-primary/30' : isLight ? 'bg-white border-gray-200 hover:bg-gray-50 hover:scale-[1.02] hover:shadow-lg' : 'bg-[#252525]/40 border-white/5 hover:bg-[#252525] hover:scale-[1.02] hover:shadow-lg'}`}
+              className={`group flex flex-col rounded-xl p-4 transition-all duration-200 cursor-pointer border ${selectedId === item.id ? 'bg-primary/20 border-primary/50 ring-2 ring-primary/30' : isLight ? 'bg-white border-gray-200 hover:bg-gray-50 hover:scale-[1.02] hover:shadow-lg' : 'bg-[#252525]/40 border-white/5 hover:bg-[#252525] hover:scale-[1.02] hover:shadow-lg'} ${draggingItemId === item.id ? 'opacity-50' : ''}`}
             >
               <div className={`aspect-[4/3] w-full rounded-lg mb-3 flex items-center justify-center relative overflow-hidden ${isLight ? 'bg-gray-100' : 'bg-black/20'}`}>
                 {(() => {

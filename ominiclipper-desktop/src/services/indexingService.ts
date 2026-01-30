@@ -6,6 +6,31 @@
 import { ResourceItem, ResourceType } from '../types';
 import { extractFullContent } from './contentExtractionService';
 import { vectorStoreService } from './vectorStoreService';
+import { getFolders, getTags } from './storage/tags_folders';
+
+/**
+ * Get folder name from folderId
+ */
+function getFolderName(folderId?: string): string {
+  if (!folderId) return '';
+  const folders = getFolders();
+  const folder = folders.find(f => f.id === folderId);
+  return folder?.name || '';
+}
+
+/**
+ * Get tag names from tag IDs
+ */
+function getTagNames(tagIds: string[]): string[] {
+  if (!tagIds || tagIds.length === 0) return [];
+  const allTags = getTags();
+  return tagIds
+    .map(id => {
+      const tag = allTags.find(t => t.id === id);
+      return tag?.name || '';
+    })
+    .filter(name => name.length > 0);
+}
 
 /**
  * Index a resource item
@@ -36,14 +61,20 @@ export async function indexResourceItem(
 
         console.log(`[IndexingService] Extracted ${text.length} chars. Sending to VectorStore...`);
 
-        // 3. Index into Vector Store (and BM25 via hybrid service backend)
+        // 3. Resolve folder name and tag names for BM25 weighting
+        const folderName = getFolderName(item.folderId);
+        const tagNames = getTagNames(item.tags || []);
+
+        // 4. Index into Vector Store (and BM25 via hybrid service backend)
         const result = await vectorStoreService.indexDocument({
             id: item.id,
             text: text,
             metadata: {
                 title: item.title,
                 type: item.type,
-                tags: item.tags || [],
+                tags: tagNames,
+                folderName: folderName,  // Folder name for BM25 weighting (10x)
+                folderId: item.folderId,
                 createdAt: item.createdAt
             }
         });

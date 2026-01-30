@@ -35,7 +35,25 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
   const [contextMenuTarget, setContextMenuTarget] = useState<ResourceItem | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const isLight = colorMode === 'light';
+
+  // Drag handlers for moving items between folders
+  const handleItemDragStart = (e: React.DragEvent, item: ResourceItem) => {
+    const dragData = {
+      type: 'internal-item',
+      itemId: item.id,
+      itemTitle: item.title,
+      sourceView: 'list-detail',
+    };
+    e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingItemId(item.id);
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggingItemId(null);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, item: ResourceItem) => {
     e.preventDefault();
@@ -240,10 +258,13 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
             items.map(item => (
               <div
                 key={item.id}
+                draggable
+                onDragStart={(e) => handleItemDragStart(e, item)}
+                onDragEnd={handleItemDragEnd}
                 onClick={() => onSelect(item.id)}
                 onDoubleClick={() => handleDoubleClick(item)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
-                className={itemClass(selectedId === item.id)}
+                className={`${itemClass(selectedId === item.id)} ${draggingItemId === item.id ? 'opacity-50' : ''}`}
               >
                 {isLight && selectedId === item.id && (
                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#007aff]"></div>

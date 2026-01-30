@@ -159,14 +159,50 @@ async function initialize(userDataPath, modelId = DEFAULT_MODEL_ID) {
 
     const tables = await db.tableNames();
     if (tables.includes(tableName)) {
-      table = await db.openTable(tableName);
-      const count = await table.countRows();
-      console.log('[VectorService] Opened existing table with', count, 'documents');
+      try {
+        table = await db.openTable(tableName);
+        const count = await table.countRows();
+        console.log('[VectorService] Opened existing table with', count, 'documents');
+      } catch (err) {
+        console.error('[VectorService] Failed to open existing table (corruption detected):', err);
+        console.log('[VectorService] Deleting corrupted table and recreating...');
 
-      // Basic schema check could go here if needed
-    } else {
-      console.log('[VectorService] Table does not exist, will create on first insert');
-      table = null;
+        // Try to drop table or remove directory manually
+        try {
+          await db.dropTable(tableName);
+        } catch (dropErr) {
+          console.warn('[VectorService] Drop table failed, attempting manual cleanup:', dropErr);
+          const tablePath = path.join(dbPath, tableName + '.lance');
+          if (fs.existsSync(tablePath)) {
+            fs.rmSync(tablePath, { recursive: true, force: true });
+          }
+        }
+        table = null; // Ensure we fall through to creation
+      }
+    }
+
+    if (!table) {
+      // Eagerly create the table with empty data but proper schema
+      console.log('[VectorService] Table does not exist (or was reset), creating now...');
+      const vectorDim = config.dim;
+
+      const schema = new arrow.Schema([
+        new arrow.Field('id', new arrow.Utf8()),
+        new arrow.Field('doc_id', new arrow.Utf8()),
+        new arrow.Field('text', new arrow.Utf8()),
+        new arrow.Field('chunk_index', new arrow.Int32()),
+        new arrow.Field('vector', new arrow.FixedSizeList(vectorDim, new arrow.Field('item', new arrow.Float32()))),
+        new arrow.Field('title', new arrow.Utf8(), true),
+        new arrow.Field('type', new arrow.Utf8(), true),
+        new arrow.Field('tags', new arrow.Utf8(), true),
+        new arrow.Field('createdAt', new arrow.Utf8(), true),
+      ]);
+
+      // Create empty table with schema
+      // Note: createTable overwrites if exists usually, or check options.
+      // But we handled cleanup above.
+      table = await db.createTable(tableName, [], { schema, mode: 'overwrite' });
+      console.log('[VectorService] Table created successfully with schema');
     }
 
     isInitialized = true;
