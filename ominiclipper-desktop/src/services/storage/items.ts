@@ -34,8 +34,8 @@ export const getItemsAsResourceItems = (): ResourceItem[] => {
         updatedAt: entry.updatedAt,
         deletedAt: entry.deletedAt,
         isCloud: false,
-        path: undefined,
-        localPath: undefined,
+        path: entry.path,
+        localPath: entry.localPath,
         fileSize: undefined,
         mimeType: undefined,
         contentSnippet: undefined,
@@ -45,7 +45,7 @@ export const getItemsAsResourceItems = (): ResourceItem[] => {
         thumbnailUrl: undefined,
         description: undefined,
         fileHash: undefined,
-        storageMode: 'reference' as const,
+        storageMode: (entry.storageMode as FileStorageMode) || 'reference',
     })) || [];
 };
 
@@ -100,8 +100,8 @@ export const getItemById = async (id: string): Promise<ResourceItem | null> => {
         updatedAt: indexEntry.updatedAt,
         deletedAt: indexEntry.deletedAt,
         isCloud: false,
-        path: undefined,
-        localPath: undefined,
+        path: indexEntry.path,
+        localPath: indexEntry.localPath,
         fileSize: undefined,
         mimeType: undefined,
         contentSnippet: undefined,
@@ -111,7 +111,7 @@ export const getItemById = async (id: string): Promise<ResourceItem | null> => {
         thumbnailUrl: undefined,
         description: undefined,
         fileHash: undefined,
-        storageMode: 'reference',
+        storageMode: (indexEntry.storageMode as FileStorageMode) || 'reference',
     };
 };
 
@@ -143,6 +143,9 @@ export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'upd
         createdAt: newItem.createdAt,
         updatedAt: newItem.updatedAt,
         deletedAt: newItem.deletedAt,
+        path: newItem.path,
+        localPath: newItem.localPath,
+        storageMode: newItem.storageMode,
     };
 
     const items = getItems();
@@ -190,6 +193,9 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
         color: updates.color ?? items[index].color,
         isStarred: updates.isStarred ?? items[index].isStarred,
         updatedAt: now,
+        path: updates.path ?? items[index].path,
+        localPath: updates.localPath ?? items[index].localPath,
+        storageMode: updates.storageMode ?? items[index].storageMode,
     };
     saveItems(items);
 

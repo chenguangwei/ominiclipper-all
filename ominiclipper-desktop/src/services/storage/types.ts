@@ -11,6 +11,9 @@ export interface ItemIndexEntry {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string; // Soft delete marker
+  path?: string;
+  localPath?: string;
+  storageMode?: 'embed' | 'reference' | 'cloud';
 }
 
 export interface LibraryData {
@@ -22,27 +25,27 @@ export interface LibraryData {
 }
 
 export interface SettingsData {
-    version: number;
-    colorMode: string;
-    themeId: string;
-    locale: string;
-    customStoragePath: string | null;
-    viewMode: string;
-    filterState: FilterState;
-    recentFiles: any[];
-    favoriteFolders: string[];
+  version: number;
+  colorMode: string;
+  themeId: string;
+  locale: string;
+  customStoragePath: string | null;
+  viewMode: string;
+  filterState: FilterState;
+  recentFiles: any[];
+  favoriteFolders: string[];
 }
 
 export const STORAGE_KEYS = {
-    ITEMS: 'omniclipper_items',
-    TAGS: 'omniclipper_tags',
-    FOLDERS: 'omniclipper_folders',
-    FILTER_STATE: 'omniclipper_filter_state',
-    VIEW_MODE: 'omniclipper_view_mode',
-    COLOR_MODE: 'app_color_mode',
-    THEME_ID: 'app_theme_id',
-    STORAGE_PATH: 'omniclipper_storage_path',
-    RECENT_FILES: 'omniclipper_recent_files',
-    FAVORITE_FOLDERS: 'omniclipper_favorite_folders',
-    LOCALE: 'LOCALE_KEY',
+  ITEMS: 'omniclipper_items',
+  TAGS: 'omniclipper_tags',
+  FOLDERS: 'omniclipper_folders',
+  FILTER_STATE: 'omniclipper_filter_state',
+  VIEW_MODE: 'omniclipper_view_mode',
+  COLOR_MODE: 'app_color_mode',
+  THEME_ID: 'app_theme_id',
+  STORAGE_PATH: 'omniclipper_storage_path',
+  RECENT_FILES: 'omniclipper_recent_files',
+  FAVORITE_FOLDERS: 'omniclipper_favorite_folders',
+  LOCALE: 'LOCALE_KEY',
 };

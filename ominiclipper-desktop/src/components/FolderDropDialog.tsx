@@ -541,7 +541,7 @@ const FolderDropDialog: React.FC<FolderDropDialogProps> = ({
               >
                 <Icon name="file_copy" className="text-[20px] text-primary mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white">Copy to Library</p>
+                  <p className="text-sm font-medium text-white">Embed Files</p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Copy files to app storage
                   </p>

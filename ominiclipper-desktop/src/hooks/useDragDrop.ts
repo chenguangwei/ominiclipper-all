@@ -45,6 +45,7 @@ export const useDragDrop = (
     const [isDragOver, setIsDragOver] = useState(false);
     const dragCounterRef = useRef(0);
     const [pendingDropFile, setPendingDropFile] = useState<File | null>(null);
+    const [pendingDropPath, setPendingDropPath] = useState<string | null>(null);
     const [isFileDropDialogOpen, setIsFileDropDialogOpen] = useState(false);
     const [pendingDropFolder, setPendingDropFolder] = useState<string | null>(null);
     const [isFolderDropDialogOpen, setIsFolderDropDialogOpen] = useState(false);
@@ -175,27 +176,53 @@ export const useDragDrop = (
 
         if (files.length > 0) {
             const file = files[0];
-            const filePath = (file as any).path;
+            const api = (window as any).electronAPI;
+
+            // Get file path using webUtils.getPathForFile (Electron 29+) or fallback to file.path
+            let filePath = (file as any).path;
+            console.log('[useDragDrop] file.path (native):', filePath);
+            console.log('[useDragDrop] getPathForFile API available:', !!api?.getPathForFile);
+
+            if (!filePath && api?.getPathForFile) {
+                try {
+                    filePath = api.getPathForFile(file);
+                    console.log('[useDragDrop] Got path via getPathForFile:', filePath);
+                } catch (err) {
+                    console.error('[useDragDrop] getPathForFile failed:', err);
+                }
+            }
 
             console.log('[useDragDrop] file.name:', file.name);
-            console.log('[useDragDrop] file.path (Electron):', filePath);
+            console.log('[useDragDrop] file.path (resolved):', filePath);
             console.log('[useDragDrop] file.type:', file.type);
             console.log('[useDragDrop] file.size:', file.size);
 
-            if (filePath && (window as any).electronAPI?.isDirectory) {
+            if (filePath && api?.isDirectory) {
                 try {
-                    const isDir = await (window as any).electronAPI.isDirectory(filePath);
+                    console.log('[useDragDrop] Checking if path is directory:', filePath);
+                    const isDir = await api.isDirectory(filePath);
+                    console.log('[useDragDrop] isDirectory result:', isDir);
                     if (isDir) {
+                        console.log('[useDragDrop] Opening FolderDropDialog for:', filePath);
                         setPendingDropFolder(filePath);
                         setIsFolderDropDialogOpen(true);
                         return;
                     }
                 } catch (err) {
-                    console.error('Failed to check if directory:', err);
+                    console.error('[useDragDrop] Failed to check if directory:', err);
                 }
+            } else {
+                console.log('[useDragDrop] isDirectory check skipped - filePath:', filePath, 'isDirectory API available:', !!api?.isDirectory);
             }
 
             setPendingDropFile(file);
+            // Store the resolved path for later use in import confirmation
+            if (filePath && typeof filePath === 'string') {
+                console.log('[useDragDrop] Storing pending drop path:', filePath);
+                setPendingDropPath(filePath);
+            } else {
+                setPendingDropPath(null);
+            }
             setIsFileDropDialogOpen(true);
         }
     };
@@ -254,7 +281,8 @@ export const useDragDrop = (
                 useRules: true,
                 useAI: true,
                 autoCreateFolders: true,
-                targetFolderId: targetFolderId
+                targetFolderId: targetFolderId,
+                overridePath: pendingDropPath || undefined
             });
 
             if (result.success) {
@@ -283,11 +311,13 @@ export const useDragDrop = (
         setFolders([...storageService.getFolders()]); // Sync folders
         setTags([...storageService.getTags()]);       // Sync tags
         setPendingDropFile(null);
+        setPendingDropPath(null);
         setIsFileDropDialogOpen(false);
     };
 
     const handleFileDropClose = () => {
         setPendingDropFile(null);
+        setPendingDropPath(null);
         setIsFileDropDialogOpen(false);
     };
 

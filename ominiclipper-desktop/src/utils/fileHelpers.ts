@@ -1,5 +1,5 @@
 import { ResourceItem, ResourceType } from '../types';
-import path from 'path';
+
 
 /**
  * Check if a path is an absolute file path (not just a filename)
@@ -158,6 +158,18 @@ export const getEffectiveType = (item: ResourceItem): ResourceType => {
   }
 };
 
+
+// Helper to join paths without Node's path module (Renderer process safe)
+const joinPath = (...parts: string[]) => {
+  return parts
+    .map((part, i) => {
+      if (i === 0) return part.trim().replace(/[\/]*$/, '');
+      return part.trim().replace(/^[\/]*|[\/]*$/g, '');
+    })
+    .filter(x => x.length)
+    .join('/');
+};
+
 export async function recoverItemPath(item: ResourceItem): Promise<string | null> {
   console.log('[fileHelpers] recoverItemPath called for:', item.id);
   try {
@@ -197,14 +209,14 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
     try {
       const userDataPath = await (window as any).electronAPI?.getUserDataPath?.();
       if (userDataPath) {
-        const legacyStoragePath = path.join(userDataPath, 'OmniCollector', 'documents');
+        const legacyStoragePath = joinPath(userDataPath, 'OmniCollector', 'documents');
 
         if (await (window as any).electronAPI.fileExists?.(legacyStoragePath)) {
           console.log('[fileHelpers] Checking legacy path:', legacyStoragePath);
 
           // 策略1: 尝试用 ID 作为文件名
           const idFileName = `${item.id}.pdf`; // 假设常见扩展名
-          const idPath = path.join(legacyStoragePath, idFileName);
+          const idPath = joinPath(legacyStoragePath, idFileName);
           if (await (window as any).electronAPI.fileExists?.(idPath)) {
             console.log('[fileHelpers] Found by ID in legacy:', idPath);
             return idPath;
@@ -214,7 +226,7 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
           const idPrefix = item.id.split('-')[0];
           // 尝试查找包含前缀的文件
           for (const ext of ['.pdf', '.docx', '.doc', '.epub', '.jpg', '.png']) {
-            const guessPath = path.join(legacyStoragePath, `${idPrefix}${ext}`);
+            const guessPath = joinPath(legacyStoragePath, `${idPrefix}${ext}`);
             if (await (window as any).electronAPI.fileExists?.(guessPath)) {
               console.log('[fileHelpers] Found by ID prefix in legacy:', guessPath);
               return guessPath;
@@ -224,7 +236,7 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
           // 策略3: 尝试用文件名匹配
           const baseName = item.title?.replace(/\.[^/.]+$/, '') || fileName.replace(/\.[^/.]+$/, '');
           for (const ext of ['.pdf', '.docx', '.doc', '.epub', '.jpg', '.png']) {
-            const namePath = path.join(legacyStoragePath, `${baseName}${ext}`);
+            const namePath = joinPath(legacyStoragePath, `${baseName}${ext}`);
             if (await (window as any).electronAPI.fileExists?.(namePath)) {
               console.log('[fileHelpers] Found by name in legacy:', namePath);
               return namePath;
@@ -233,7 +245,7 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
 
           // 策略4: 如果 title 有完整扩展名，尝试直接匹配
           if (item.title && item.title.includes('.')) {
-            const directPath = path.join(legacyStoragePath, item.title);
+            const directPath = joinPath(legacyStoragePath, item.title);
             if (await (window as any).electronAPI.fileExists?.(directPath)) {
               console.log('[fileHelpers] Found by title in legacy:', directPath);
               return directPath;
@@ -250,13 +262,13 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
     try {
       const userDataPath = await (window as any).electronAPI?.getUserDataPath?.();
       if (userDataPath && item.id) {
-        const itemsPath = path.join(userDataPath, 'OmniCollector', 'items', item.id);
+        const itemsPath = joinPath(userDataPath, 'OmniCollector', 'items', item.id);
         if (await (window as any).electronAPI.fileExists?.(itemsPath)) {
           // itemsPath 是一个目录，扫描它
           console.log('[fileHelpers] Items path exists but cannot scan:', itemsPath);
           // 如果能列出目录就好了，但暂时返回 itemsPath 本身作为尝试（如果调用者能处理目录）
           // 或者尝试常见文件名
-          const guessPath = path.join(itemsPath, fileName);
+          const guessPath = joinPath(itemsPath, fileName);
           if (await (window as any).electronAPI.fileExists?.(guessPath)) {
             return guessPath;
           }
@@ -270,14 +282,14 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
     try {
       const userDataPath = await (window as any).electronAPI?.getUserDataPath?.();
       if (userDataPath && item.id) {
-        const foldersPath = path.join(userDataPath, 'OmniCollector', 'folders');
+        const foldersPath = joinPath(userDataPath, 'OmniCollector', 'folders');
 
         if (await (window as any).electronAPI.fileExists?.(foldersPath)) {
           console.log('[fileHelpers] Checking folders path:', foldersPath);
 
           // 策略1: 如果有 folderId，检查对应文件夹
           if (item.folderId) {
-            const folderItemPath = path.join(foldersPath, item.folderId, fileName);
+            const folderItemPath = joinPath(foldersPath, item.folderId, fileName);
             if (await (window as any).electronAPI.fileExists?.(folderItemPath)) {
               console.log('[fileHelpers] Found in folder directory:', folderItemPath);
               return folderItemPath;
@@ -285,7 +297,7 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
           }
 
           // 策略2: 检查 uncategorized 文件夹
-          const uncategorizedPath = path.join(foldersPath, 'uncategorized', fileName);
+          const uncategorizedPath = joinPath(foldersPath, 'uncategorized', fileName);
           if (await (window as any).electronAPI.fileExists?.(uncategorizedPath)) {
             console.log('[fileHelpers] Found in uncategorized folder:', uncategorizedPath);
             return uncategorizedPath;
@@ -401,26 +413,42 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
     try {
       const result = await (window as any).electronAPI.readFile(filePath);
       console.log('[fileHelpers] IPC read result:', result?.success ? 'success' : 'failed');
+
       if (result && result.success) {
         if (result.buffer) {
+          let buffer: Uint8Array | null = null;
+
           // Case A: Raw Uint8Array (Preferred)
           if (result.buffer instanceof Uint8Array) {
             console.log('[fileHelpers] Buffer type: Uint8Array, byteLength:', result.buffer.length);
-            // 【关键修复】必须使用 slice(0) 复制内存，防止 Buffer 偏移量导致的解析错误
-            return result.buffer.slice(0).buffer;
+            // slice(0) copies memory to avoid offset issues
+            buffer = result.buffer.slice(0);
           }
-          // Case B: Base64 String (Legacy)
-          if (typeof result.buffer === 'string') {
+          // Case B: Regular Array (Fallback for some IPC scenarios)
+          else if (Array.isArray(result.buffer)) {
+            console.log('[fileHelpers] Buffer type: Array, length:', result.buffer.length);
+            buffer = new Uint8Array(result.buffer);
+          }
+          // Case C: Base64 String (Legacy)
+          else if (typeof result.buffer === 'string') {
             console.log('[fileHelpers] Buffer type: base64 string, length:', result.buffer.length);
             const binaryString = atob(result.buffer);
-            const bytes = new Uint8Array(binaryString.length);
+            buffer = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
+              buffer[i] = binaryString.charCodeAt(i);
             }
-            return bytes.buffer;
+          }
+
+          if (buffer) {
+            // Log magic bytes for debugging
+            if (buffer.length >= 4) {
+              const magic = Array.from(buffer.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+              console.log('[fileHelpers] File Header (Magic Bytes):', magic);
+            }
+            return buffer.buffer as ArrayBuffer;
           }
         }
-        throw new Error('File read success but buffer is empty');
+        throw new Error('File read success but buffer is empty or invalid format');
       } else if (result && result.error) {
         console.error('[fileHelpers] IPC read failed:', result.error);
         throw new Error(result.error);

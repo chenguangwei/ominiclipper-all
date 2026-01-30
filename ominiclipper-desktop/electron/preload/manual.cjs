@@ -3,11 +3,12 @@
  * MANUAL CJS VERSION to bypass build issues
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 console.log('[Preload] Script starting (MANUAL CJS)...');
 console.log('[Preload] contextBridge:', !!contextBridge);
 console.log('[Preload] ipcRenderer:', !!ipcRenderer);
+console.log('[Preload] webUtils:', !!webUtils);
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -37,6 +38,9 @@ try {
         isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
         deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
 
+        // Get file path from File object (for drag-drop with contextIsolation)
+        getPathForFile: (file) => webUtils ? webUtils.getPathForFile(file) : null,
+
         // Shell operations
         openPath: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
         openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
@@ -46,6 +50,7 @@ try {
         scanDirectory: (dirPath, options) => ipcRenderer.invoke('fs:scanDirectory', dirPath, options),
         copyFileToStorage: (sourcePath, targetFileName) => ipcRenderer.invoke('fs:copyFileToStorage', sourcePath, targetFileName),
         importFileToIdStorage: (sourcePath, itemId) => ipcRenderer.invoke('fs:importFileToIdStorage', sourcePath, itemId),
+        ensureItemDirectory: (itemId) => ipcRenderer.invoke('fs:ensureItemDirectory', itemId),
         selectDirectory: (title) => ipcRenderer.invoke('dialog:selectDirectory', title),
         saveEmbeddedFile: (base64Data, fileName, itemId) => ipcRenderer.invoke('fs:saveEmbeddedFile', base64Data, fileName, itemId),
 

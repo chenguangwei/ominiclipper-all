@@ -23,9 +23,19 @@ const WordRenderer: React.FC<WordRendererProps> = ({
   const wordContainerRef = useRef<HTMLDivElement>(null);
   const isLight = colorMode === 'light';
 
+  // Check for legacy .doc format (D0 CF 11 E0)
+  const isLegacyDoc = React.useMemo(() => {
+    if (content && content.byteLength >= 4) {
+      const header = new Uint8Array(content.slice(0, 4));
+      const hex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+      return hex === 'D0 CF 11 E0';
+    }
+    return false;
+  }, [content]);
+
   useEffect(() => {
     // 增加 content.byteLength 检查，防止空数据渲染
-    if (!content || content.byteLength === 0 || loading || error) {
+    if (!content || content.byteLength === 0 || loading || error || isLegacyDoc) {
       return;
     }
 
@@ -80,7 +90,40 @@ const WordRenderer: React.FC<WordRendererProps> = ({
     };
   }, [content, loading, error]);
 
-  const shouldShowView = onOpenDocument;
+
+
+  if (isLegacyDoc) {
+    return (
+      <div className="flex-1 flex flex-col h-full min-h-0 items-center justify-center p-6 text-center">
+        <Icon name="description" className="text-[48px] text-red-400 mb-4" />
+        <h3 className={`text-lg font-medium mb-2 ${isLight ? 'text-gray-900' : 'text-red-400'}`}>
+          Legacy Format (.doc)
+        </h3>
+        <p className={`text-sm max-w-md mb-6 ${isLight ? 'text-gray-500' : 'text-slate-400'}`}>
+          This is a legacy Microsoft Word 97-2003 document. The built-in viewer only supports modern Word documents (.docx).
+        </p>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          {item.localPath && (window as any).electronAPI ? (
+            <button
+              onClick={() => (window as any).electronAPI?.openPath(item.localPath)}
+              className={`w-full px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors ${isLight
+                ? 'bg-[#007aff] text-white hover:bg-[#0066d6]'
+                : 'bg-primary text-white hover:bg-primary/90'
+                }`}
+            >
+              <Icon name="open_in_new" className="text-[18px]" />
+              Open with Word
+            </button>
+          ) : (
+            <div className={`w-full px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 ${isLight ? 'bg-gray-100 text-gray-500' : 'bg-[#252525] text-slate-400'}`}>
+              <Icon name="info" className="text-[18px]" />
+              Cannot open externally
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden">

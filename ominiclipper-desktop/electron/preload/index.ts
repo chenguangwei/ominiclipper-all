@@ -2,11 +2,12 @@
  * OmniCollector Desktop - Electron Preload Script
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 console.log('[Preload] Script starting...');
 console.log('[Preload] contextBridge:', !!contextBridge);
 console.log('[Preload] ipcRenderer:', !!ipcRenderer);
+console.log('[Preload] webUtils:', !!webUtils);
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -36,6 +37,9 @@ try {
     isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
     deleteFile: (filePath) => ipcRenderer.invoke('file:deleteFile', filePath),
 
+    // Get file path from File object (for drag-drop with contextIsolation)
+    getPathForFile: (file) => webUtils ? webUtils.getPathForFile(file) : null,
+
     // Shell operations
     openPath: (filePath) => ipcRenderer.invoke('shell:openPath', filePath),
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
@@ -47,6 +51,7 @@ try {
     selectDirectory: (title) => ipcRenderer.invoke('dialog:selectDirectory', title),
     saveEmbeddedFile: (base64Data, fileName, itemId) => ipcRenderer.invoke('fs:saveEmbeddedFile', base64Data, fileName, itemId),
     importFileToIdStorage: (sourcePath, itemId) => ipcRenderer.invoke('fs:importFileToIdStorage', sourcePath, itemId),
+    ensureItemDirectory: (itemId) => ipcRenderer.invoke('fs:ensureItemDirectory', itemId),
     exportFile: (sourcePath, targetDir, targetFileName) => ipcRenderer.invoke('fs:exportFile', sourcePath, targetDir, targetFileName),
     calculateHash: (filePath) => ipcRenderer.invoke('fs:calculateHash', filePath),
 

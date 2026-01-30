@@ -9,7 +9,7 @@ import * as storageService from './storageService';
 import * as ruleEngine from './ruleEngine';
 import aiClassifier from './aiClassifier';
 import * as contentExtraction from './contentExtractionService';
-import { saveItemMetadata } from './fileStorageService';
+import { saveItemMetadata } from './itemFileMetadataService';
 
 // Check if running in Electron
 function isElectron(): boolean {
@@ -60,6 +60,7 @@ export interface BatchImportOptions {
   targetFolderId?: string;  // Override target folder
   skipFileStorage?: boolean; // Skip copying/embedding file (if already handled)
   onProgress?: (progress: BatchImportProgress) => void;
+  overridePath?: string; // Explicitly provided path
 }
 
 // ============================================
@@ -334,13 +335,38 @@ export const classifyAndImportFile = async (
 
       // Check if the path is absolute or relative to category
       // If we have a category folder, and the first part of subfolder matches it, we assume full path
-      if (classification.category) {
-        if (folderPath[0] === classification.category) {
-          // Full path, start from root (parentId undefined)
-        } else if (classification.folderId) {
-          // Relative path, start from category folder
+      if (classification.folderId) {
+        // Resolve the root folder to check its real name (e.g. "Work") vs localized name (e.g. "工作")
+        const rootFolder = folders.find(f => f.id === classification.folderId);
+
+        if (rootFolder && folderPath.length > 0) {
+          const firstSegment = folderPath[0].trim();
+          // Check if first segment matches Category (localized) OR System Name (English)
+          const isRootMatch =
+            firstSegment === classification.category ||
+            firstSegment.toLowerCase() === rootFolder.name.toLowerCase();
+
+          if (isRootMatch) {
+            // It's a full path (e.g. "工作/Project" or "Work/Project")
+            // Anchor to the existing ID and consume the first segment
+            parentId = classification.folderId;
+            folderPath.shift();
+          } else {
+            // It's a relative path (e.g. "Project")
+            // Anchor to the existing ID and keep all segments
+            parentId = classification.folderId;
+          }
+        } else {
+          // Fallback if folder lookup failed
           parentId = classification.folderId;
         }
+      } else if (classification.category && folderPath[0] === classification.category) {
+        // No folderId resolved, but path matches category string? 
+        // This implies creating a new root folder with that name, or using undefined parent.
+        // We'll leave parentId undefined so it searches/creates at root.
+        // But we should probably NOT shift, because we want to create "Category/Sub" if it doesn't exist?
+        // Actually, if we want to treat "Category" as the container, we should let the loop create it.
+        // So parentId = undefined, do nothing special.
       }
 
       for (const folderName of folderPath) {
@@ -441,41 +467,52 @@ export const classifyAndImportFile = async (
     if (!options.skipFileStorage && isElectron()) {
       try {
         const api = (window as any).electronAPI;
-        // Scheme A: Use ID-based storage if available
-        if (api.importFileToIdStorage) {
-          const result = await api.importFileToIdStorage(file.path, itemId);
-          if (result.success) {
-            localPath = result.targetPath;
-            finalPath = result.targetPath;
 
-            // Clean up temp file if it was explicitly marked as temporary
-            if (file.isTempFile) {
-              console.log('[BatchImport] Deleting temporary file marked isTempFile:', file.path);
-              const deleteResult = await api.deleteFile(file.path);
-              if (deleteResult.success) {
-                console.log('[BatchImport] Successfully cleaned up temp file');
+        // Check storageMode to decide whether to copy file
+        if (options.storageMode === 'embed') {
+          // EMBED mode: Copy file to files/{itemId}/ directory
+          if (api.importFileToIdStorage) {
+            const result = await api.importFileToIdStorage(file.path, itemId);
+            if (result.success) {
+              localPath = result.targetPath;
+              finalPath = result.targetPath;
+
+              // Clean up temp file if it was explicitly marked as temporary
+              if (file.isTempFile) {
+                console.log('[BatchImport] Deleting temporary file marked isTempFile:', file.path);
+                const deleteResult = await api.deleteFile(file.path);
+                if (deleteResult.success) {
+                  console.log('[BatchImport] Successfully cleaned up temp file');
+                } else {
+                  console.warn('[BatchImport] Failed to clean up temp file:', deleteResult.error);
+                }
               } else {
-                console.warn('[BatchImport] Failed to clean up temp file:', deleteResult.error);
+                // Fallback: check if it looks like a temp file in root (legacy behavior safety)
+                const filesRoot = await api.fileStorageAPI?.getStoragePath();
+                if (filesRoot && file.path.startsWith(filesRoot) && !file.path.includes(itemId)) {
+                  console.log('[BatchImport] Deleting guessed temporary file:', file.path);
+                  const deleteResult = await api.deleteFile(file.path);
+                  if (deleteResult.success) console.log('[BatchImport] Cleaned up temp file');
+                }
               }
             } else {
-              // Fallback: check if it looks like a temp file in root (legacy behavior safety)
-              const filesRoot = await api.fileStorageAPI?.getStoragePath();
-              if (filesRoot && file.path.startsWith(filesRoot) && !file.path.includes(itemId)) {
-                console.log('[BatchImport] Deleting guessed temporary file:', file.path);
-                const deleteResult = await api.deleteFile(file.path);
-                if (deleteResult.success) console.log('[BatchImport] Cleaned up temp file');
-              }
+              console.error('[BatchImport] ID storage import failed:', result.error);
             }
-          } else {
-            console.error('[BatchImport] ID storage import failed:', result.error);
+          } else if (api.copyFileToStorage) {
+            // Fallback to legacy flat storage
+            const copyResult = await api.copyFileToStorage(file.path, file.name);
+            if (copyResult.success) {
+              localPath = copyResult.targetPath;
+              finalPath = copyResult.targetPath;
+            }
           }
-        } else if (api.copyFileToStorage) {
-          // Fallback to legacy flat storage
-          const copyResult = await api.copyFileToStorage(file.path, file.name);
-          if (copyResult.success) {
-            localPath = copyResult.targetPath;
-            finalPath = copyResult.targetPath;
+        } else {
+          // REFERENCE mode: Don't copy file, only ensure directory exists for metadata.json
+          console.log('[BatchImport] Reference mode - not copying file, keeping original path:', file.path);
+          if (api.ensureItemDirectory) {
+            await api.ensureItemDirectory(itemId);
           }
+          // localPath and finalPath stay as original file.path
         }
       } catch (error) {
         console.error('[BatchImport] File storage operation failed:', error);
@@ -505,28 +542,11 @@ export const classifyAndImportFile = async (
     });
 
     // Step 7: Save metadata.json to ID storage (Scheme A)
-    if (finalPath && isElectron()) {
+    // Use the full ResourceItem to ensure correct format for metadataToResourceItem
+    if (isElectron()) {
       try {
-        const now = Date.now();
-        const ext = file.name.split('.').pop() || '';
-        const metadata = {
-          id: itemId,
-          name: newItem.title,
-          type: type as any,
-          size: file.size,
-          btime: now,
-          mtime: now,
-          ext: ext,
-          tags: itemTags,
-          folders: targetFolderId ? [targetFolderId] : [],
-          color: 'tag-blue',
-          starred: false,
-          description: newItem.contentSnippet,
-          modificationTime: now,
-          fileHash,
-        };
-        await saveItemMetadata(itemId, metadata);
-        console.log('[BatchImport] Saved metadata.json for item:', itemId);
+        await saveItemMetadata(newItem);
+        console.log('[BatchImport] Saved metadata.json for item:', itemId, 'path:', finalPath);
       } catch (err) {
         console.error('[BatchImport] Failed to save metadata.json:', err);
       }
@@ -677,13 +697,18 @@ export const importSingleFile = async (
     return path && (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path));
   };
 
-  let filePath = (file as any).path || file.name;
+  let filePath = options.overridePath || (file as any).path || file.name;
   let skipFileStorage = false;
 
   // If path is not absolute (e.g. browser drag or restricted Electron file object),
   // we must save the content manually first.
   if (!isAbsolutePath(filePath) && (window as any).electronAPI?.saveEmbeddedFile) {
-    console.log('[BatchImport] Invalid file path detected, saving content manually:', filePath);
+    if (options.storageMode === 'reference') {
+      console.error('[BatchImport] Reference mode requires absolute path, but none found:', filePath);
+      throw new Error('Reference Mode requires a valid system file path. Unable to resolve path for this file.');
+    }
+
+    console.log('[BatchImport] Invalid file path detected in EMBED mode, saving content manually:', filePath);
     try {
       const buffer = await file.arrayBuffer();
       const binary = new Uint8Array(buffer);

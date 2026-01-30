@@ -6,7 +6,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ResourceItem, ResourceType } from '../types';
 import Icon from './Icon';
-import { readLocalFileAsDataUrl, isElectron, formatFileSize } from '../services/fileManager';
+import { isElectron, formatFileSize } from '../services/fileManager';
+import { getFileData } from '../utils/fileHelpers';
 import * as docx from 'docx-preview';
 
 interface DocxViewerProps {
@@ -32,72 +33,39 @@ const DocxViewer: React.FC<DocxViewerProps> = ({ item, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [docxData, setDocxData] = useState<ArrayBuffer | null>(null);
 
-  // Get usable path (handles embedded data)
-  const rawDocumentPath = item.path;
-
-  // Load document data
+  // Load document data using getFileData which handles all sources and path recovery
   useEffect(() => {
     const loadDocx = async () => {
       setIsLoading(true);
       setError(null);
 
-      if (!rawDocumentPath) {
-        setError('No document path available');
-        setIsLoading(false);
-        return;
-      }
-
       try {
-        let arrayBuffer: ArrayBuffer;
+        console.log('[DocxViewer] Loading document via getFileData...');
+        const arrayBuffer = await getFileData(item);
+        console.log('[DocxViewer] Document loaded, size:', arrayBuffer.byteLength);
 
-        // If it's embedded data (base64 or data URL), convert to ArrayBuffer
-        if (item.storageMode === 'embed' && item.embeddedData) {
-          console.log('Loading embedded DOCX data');
-          // If already a data URL, use directly; otherwise convert base64 to data URL
-          const dataUrl = item.embeddedData.startsWith('data:')
-            ? item.embeddedData
-            : `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${item.embeddedData}`;
-          const response = await fetch(dataUrl);
-          arrayBuffer = await response.arrayBuffer();
-        }
-        // If it's a local file reference in Electron, read it
-        else if (item.storageMode === 'reference' && item.localPath && isElectron()) {
-          console.log('Loading local DOCX file:', item.localPath);
-          const dataUrl = await readLocalFileAsDataUrl(item.localPath);
-          if (!dataUrl) {
-            throw new Error('Failed to read local file');
+        // Log basic file validation info
+        if (arrayBuffer.byteLength > 4) {
+          const header = new Uint8Array(arrayBuffer.slice(0, 4));
+          const hex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+          console.log('[DocxViewer] Document Header:', hex);
+          // ZIP signature is 50 4B 03 04
+          if (hex !== '50 4B 03 04') {
+            console.warn('[DocxViewer] Warning: Header does not match standard ZIP/DOCX signature');
+
+            // Check for legacy DOC signature (D0 CF 11 E0)
+            if (hex === 'D0 CF 11 E0') {
+              console.warn('[DocxViewer] Detected legacy .doc format');
+              setError('LEGACY_FORMAT_DETECTED');
+              setIsLoading(false);
+              return; // Stop processing
+            }
           }
-          const response = await fetch(dataUrl);
-          arrayBuffer = await response.arrayBuffer();
-        }
-        // If it's a data URL directly
-        else if (rawDocumentPath.startsWith('data:')) {
-          const response = await fetch(rawDocumentPath);
-          arrayBuffer = await response.arrayBuffer();
-        }
-        // For http/https URLs
-        else if (rawDocumentPath.startsWith('http://') || rawDocumentPath.startsWith('https://')) {
-          const response = await fetch(rawDocumentPath);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch document: ${response.statusText}`);
-          }
-          arrayBuffer = await response.arrayBuffer();
-        }
-        // For local paths in Electron, use electronAPI
-        else if (isElectron() && item.localPath) {
-          const dataUrl = await readLocalFileAsDataUrl(item.localPath);
-          if (!dataUrl) {
-            throw new Error('Failed to read local file');
-          }
-          const response = await fetch(dataUrl);
-          arrayBuffer = await response.arrayBuffer();
-        } else {
-          throw new Error('Unsupported document source');
         }
 
         setDocxData(arrayBuffer);
       } catch (err) {
-        console.error('Error loading DOCX:', err);
+        console.error('[DocxViewer] Error loading DOCX:', err);
         setError(err instanceof Error ? err.message : 'Failed to load document');
       } finally {
         setIsLoading(false);
@@ -105,7 +73,7 @@ const DocxViewer: React.FC<DocxViewerProps> = ({ item, onClose }) => {
     };
 
     loadDocx();
-  }, [rawDocumentPath, item.storageMode, item.localPath, item.embeddedData]);
+  }, [item.id, item.storageMode, item.localPath, item.path, item.embeddedData]);
 
   // Render DOCX when data is available
   useEffect(() => {
@@ -132,7 +100,14 @@ const DocxViewer: React.FC<DocxViewerProps> = ({ item, onClose }) => {
         setIsLoading(false);
       }).catch((err) => {
         console.error('DOCX render error:', err);
-        setError(`Failed to render document: ${err.message || 'Unknown error'}`);
+        let msg = err instanceof Error ? err.message : 'Unknown error';
+
+        // Provide more helpful error messages
+        if (msg.includes('end of central directory')) {
+          msg = 'Invalid DOCX file structure (not a valid ZIP archive). The file might be corrupted or encrypted.';
+        }
+
+        setError(`Failed to render document: ${msg}`);
         setIsLoading(false);
       });
     } catch (err) {
@@ -244,9 +219,15 @@ const DocxViewer: React.FC<DocxViewerProps> = ({ item, onClose }) => {
           {error && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#1a1a1a]">
               <div className="text-center max-w-md p-6">
-                <Icon name="warning" className="text-[48px] text-red-400 mb-4" />
-                <p className="text-lg font-medium text-red-400 mb-2">Unable to Open Document</p>
-                <p className="text-sm text-slate-400 mb-6">{error}</p>
+                <Icon name={error === 'LEGACY_FORMAT_DETECTED' ? "description" : "warning"} className="text-[48px] text-red-400 mb-4" />
+                <p className="text-lg font-medium text-red-400 mb-2">
+                  {error === 'LEGACY_FORMAT_DETECTED' ? 'Legacy Format (.doc)' : 'Unable to Open Document'}
+                </p>
+                <p className="text-sm text-slate-400 mb-6">
+                  {error === 'LEGACY_FORMAT_DETECTED'
+                    ? 'This is a legacy Microsoft Word 97-2003 document (.doc). The built-in viewer only supports modern Word documents (.docx).'
+                    : error}
+                </p>
 
                 <div className="flex flex-col gap-3">
                   {/* Open with system app - for local files */}

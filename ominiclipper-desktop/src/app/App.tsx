@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -105,7 +105,32 @@ const App: React.FC = () => {
   useDataIntegrity(items, isStorageReady);
 
   // --- Derived State ---
-  const selectedItem = useMemo(() => items.find(i => i.id === selectedItemId) || null, [selectedItemId, items]);
+  // selectedItem state - loaded asynchronously with full data from metadata.json
+  const [selectedItem, setSelectedItem] = useState<ResourceItem | null>(null);
+
+  // Load full item data when selectedItemId changes
+  useEffect(() => {
+    if (!selectedItemId) {
+      setSelectedItem(null);
+      return;
+    }
+
+    // First set the item from the lightweight list (for immediate feedback)
+    const lightweightItem = items.find(i => i.id === selectedItemId);
+    if (lightweightItem) {
+      setSelectedItem(lightweightItem);
+    }
+
+    // Then load full metadata asynchronously
+    storageService.getItemById(selectedItemId).then(fullItem => {
+      if (fullItem) {
+        console.log('[App] Loaded full item data:', fullItem.title, 'path:', fullItem.path, 'localPath:', fullItem.localPath);
+        setSelectedItem(fullItem);
+      }
+    }).catch(err => {
+      console.error('[App] Failed to load full item data:', err);
+    });
+  }, [selectedItemId, items]);
 
   // --- Handlers (that require App context) ---
 

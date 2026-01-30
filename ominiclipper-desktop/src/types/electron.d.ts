@@ -17,8 +17,12 @@ declare global {
             copyFileToStorage: (sourcePath: string, targetFileName: string, customStoragePath?: string | null) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
             saveEmbeddedFile: (base64Data: string, fileName: string, itemId: string | null) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
             importFileToIdStorage: (sourcePath: string, itemId: string) => Promise<{ success: boolean; targetPath?: string; error?: string }>;
+            ensureItemDirectory: (itemId: string) => Promise<{ success: boolean; itemDir?: string; error?: string }>;
             exportFile: (sourcePath: string, targetDir: string, targetFileName: string) => Promise<{ success: boolean; path?: string; error?: string }>;
             deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+
+            // Get file path from File object (for drag-drop with contextIsolation)
+            getPathForFile: (file: File) => string | null;
 
             // Shell operations
             openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;

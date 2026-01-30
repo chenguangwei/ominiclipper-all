@@ -643,6 +643,24 @@ function registerIPCHandlers() {
     }
   });
 
+  // Ensure item directory exists (for reference mode, only create folder for metadata)
+  ipcMain.handle('fs:ensureItemDirectory', async (event, itemId) => {
+    try {
+      const paths = getFileStoragePaths();
+      const itemDir = path.join(paths.files, itemId);
+
+      if (!fs.existsSync(itemDir)) {
+        fs.mkdirSync(itemDir, { recursive: true });
+      }
+
+      console.log('Ensured item directory:', itemDir);
+      return { success: true, itemDir };
+    } catch (error) {
+      console.error('fs:ensureItemDirectory error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Select storage directory
   ipcMain.handle('dialog:selectDirectory', async (event, title = 'Select Storage Directory') => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -940,8 +958,13 @@ function registerIPCHandlers() {
 
   ipcMain.handle('fileStorage:saveItemMetadata', async (event, itemId, metadata) => {
     const paths = getFileStoragePaths();
-    const metadataPath = path.join(paths.files, itemId, 'metadata.json');
+    const itemDir = path.join(paths.files, itemId);
+    const metadataPath = path.join(itemDir, 'metadata.json');
     try {
+      // Ensure directory exists before writing
+      if (!fs.existsSync(itemDir)) {
+        fs.mkdirSync(itemDir, { recursive: true });
+      }
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
       return { success: true };
     } catch (error) {
