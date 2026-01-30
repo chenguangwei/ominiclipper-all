@@ -25,6 +25,7 @@ import DocumentViewer from '@/components/DocumentViewer';
 import FileDropDialog from '@/components/FileDropDialog';
 import FolderDropDialog from '@/components/FolderDropDialog';
 import SettingsDialog from '@/components/SettingsDialog';
+import ImportProgress from '@/components/ImportProgress';
 
 // Services & Utils
 import * as storageService from '@/services/storageService';
@@ -509,6 +510,14 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Import Progress Overlay */}
+      <ImportProgress
+        isVisible={dnd.importProgress.isVisible}
+        status={dnd.importProgress.status}
+        fileName={dnd.importProgress.fileName}
+        progress={dnd.importProgress.progress}
+        message={dnd.importProgress.message}
+      />
     </div>
   );
 };

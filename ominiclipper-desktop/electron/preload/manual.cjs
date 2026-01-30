@@ -49,6 +49,9 @@ try {
         selectDirectory: (title) => ipcRenderer.invoke('dialog:selectDirectory', title),
         saveEmbeddedFile: (base64Data, fileName, itemId) => ipcRenderer.invoke('fs:saveEmbeddedFile', base64Data, fileName, itemId),
 
+        // Export file to target directory
+        exportFile: (sourcePath, targetDir, targetFileName) => ipcRenderer.invoke('fs:exportFile', sourcePath, targetDir, targetFileName),
+
         // Browser extension sync
         syncFromBrowserExtension: (item) => ipcRenderer.invoke('sync:browserExtension', item),
 

@@ -50,6 +50,15 @@ export const useDragDrop = (
     const [isFolderDropDialogOpen, setIsFolderDropDialogOpen] = useState(false);
     const [browserModeWarning, setBrowserModeWarning] = useState<string | null>(null);
 
+    // Import progress state
+    const [importProgress, setImportProgress] = useState<{
+        isVisible: boolean;
+        status: 'preparing' | 'classifying' | 'importing' | 'indexing' | 'complete' | 'error';
+        fileName?: string;
+        progress?: number;
+        message?: string;
+    }>({ isVisible: false, status: 'preparing' });
+
     // Detect browser mode and show warning
     useEffect(() => {
         if (typeof window !== 'undefined' && !isElectron()) {
@@ -234,6 +243,12 @@ export const useDragDrop = (
             const targetFolderId = (filterState.folderId && !specialFolders.includes(filterState.folderId))
                 ? filterState.folderId : undefined;
 
+            // Show progress
+            setImportProgress({ isVisible: true, status: 'preparing', fileName: pendingDropFile.name });
+
+            // Update to classifying
+            setImportProgress(prev => ({ ...prev, status: 'classifying', message: 'Analyzing file...' }));
+
             const result = await importSingleFile(pendingDropFile, {
                 storageMode: mode,
                 useRules: true,
@@ -243,20 +258,24 @@ export const useDragDrop = (
             });
 
             if (result.success) {
+                setImportProgress(prev => ({ ...prev, status: 'importing', message: 'Saving file...' }));
                 console.log('[useDragDrop] Import successful:', result.classification);
                 if (result.classification?.isAiclassified) {
                     console.log('[useDragDrop] AI classified to:', result.classification.folderName);
                 }
+
+                // Show complete
+                setImportProgress(prev => ({ ...prev, status: 'complete', message: 'File imported!' }));
+                setTimeout(() => setImportProgress(prev => ({ ...prev, isVisible: false })), 1500);
             } else {
                 console.error('[useDragDrop] Import failed:', result.error);
-                if (browserModeWarning) {
-                    // If we are in browser mode fallback/warning state, we might need manual handling
-                    // But importSingleFile should handle gracefully or fail
-                }
+                setImportProgress({ isVisible: true, status: 'error', fileName: pendingDropFile.name, message: result.error });
+                setTimeout(() => setImportProgress(prev => ({ ...prev, isVisible: false })), 3000);
             }
         } catch (error) {
             console.error('[useDragDrop] Import exception:', error);
-            showBrowserModeWarning(`Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setImportProgress({ isVisible: true, status: 'error', fileName: pendingDropFile?.name, message: error instanceof Error ? error.message : 'Unknown error' });
+            setTimeout(() => setImportProgress(prev => ({ ...prev, isVisible: false })), 3000);
         }
 
         await storageService.flushPendingWrites();
@@ -323,6 +342,7 @@ export const useDragDrop = (
         pendingDropFile, isFileDropDialogOpen, handleFileDropConfirm, handleFileDropClose,
         pendingDropFolder, isFolderDropDialogOpen, setPendingDropFolder, setIsFolderDropDialogOpen,
         handleDropOnFolder, handleFolderDropConfirm,
-        browserModeWarning, setBrowserModeWarning
+        browserModeWarning, setBrowserModeWarning,
+        importProgress
     };
 };
