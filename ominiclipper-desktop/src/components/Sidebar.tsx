@@ -232,7 +232,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Library Section */}
           <div className="mb-4">
             <div
-              onClick={() => { onSelectFolder('all'); onSelectTag(null); }}
+              onClick={() => onSelectFolder('all')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
@@ -263,7 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div
-              onClick={() => { onSelectFolder('uncategorized'); onSelectTag(null); }}
+              onClick={() => onSelectFolder('uncategorized')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
@@ -293,7 +293,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div
-              onClick={() => { onSelectFolder('starred'); onSelectTag(null); }}
+              onClick={() => onSelectFolder('starred')}
               className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'starred' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
             >
               <span className="w-4"></span>
@@ -302,7 +302,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div
-              onClick={() => { onSelectFolder('trash'); onSelectTag(null); }}
+              onClick={() => onSelectFolder('trash')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';

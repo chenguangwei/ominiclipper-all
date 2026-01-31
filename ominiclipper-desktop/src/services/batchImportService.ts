@@ -10,6 +10,7 @@ import * as ruleEngine from './ruleEngine';
 import aiClassifier from './aiClassifier';
 import * as contentExtraction from './contentExtractionService';
 import { saveItemMetadata } from './itemFileMetadataService';
+import { generateAndSaveThumbnail } from './thumbnailService';
 
 // Check if running in Electron
 function isElectron(): boolean {
@@ -549,6 +550,24 @@ export const classifyAndImportFile = async (
         console.log('[BatchImport] Saved metadata.json for item:', itemId, 'path:', finalPath);
       } catch (err) {
         console.error('[BatchImport] Failed to save metadata.json:', err);
+      }
+
+      // Step 8: Generate thumbnail for the item (async, non-blocking)
+      // This creates preview thumbnails for PDFs, Word docs, images, etc.
+      if (finalPath) {
+        generateAndSaveThumbnail(itemId, type, finalPath)
+          .then(thumbnailUrl => {
+            if (thumbnailUrl) {
+              // Update the item with thumbnail URL
+              storageService.updateItem(itemId, { thumbnailUrl }).catch(err => {
+                console.warn('[BatchImport] Failed to save thumbnail URL:', err);
+              });
+              console.log('[BatchImport] Thumbnail generated for:', itemId);
+            }
+          })
+          .catch(err => {
+            console.warn('[BatchImport] Thumbnail generation failed:', err);
+          });
       }
     }
 

@@ -119,8 +119,44 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
       case ResourceType.EPUB: return <Icon name="auto_stories" className="text-epub-purple text-[24px]" />;
       case ResourceType.WEB: return <Icon name="language" className="text-tag-green text-[24px]" />;
       case ResourceType.IMAGE: return <Icon name="image" className="text-tag-yellow text-[24px]" />;
+      case ResourceType.MARKDOWN: return <Icon name="article" className="text-tag-blue text-[24px]" />;
+      case ResourceType.PPT: return <Icon name="slideshow" className="text-tag-orange text-[24px]" />;
+      case ResourceType.EXCEL: return <Icon name="table_chart" className="text-tag-green text-[24px]" />;
       default: return <Icon name="draft" className={isLight ? 'text-gray-400 text-[24px]' : 'text-content-secondary text-[24px]'} />;
     }
+  };
+
+  // Helper to get thumbnail source - supports all file types with cached thumbnails
+  // Uses localfile:// protocol which is registered in Electron main process
+  const getThumbnailSrc = (item: ResourceItem): string | null => {
+    // First priority: cached thumbnail (generated for all types)
+    if (item.thumbnailUrl) {
+      // Convert file:// to localfile:// for Electron security
+      if (item.thumbnailUrl.startsWith('file://')) {
+        return item.thumbnailUrl.replace('file://', 'localfile://');
+      }
+      return item.thumbnailUrl;
+    }
+    // For images: use embedded data or file path directly
+    if (item.type === ResourceType.IMAGE) {
+      if (item.embeddedData) {
+        // If already a data URL, use directly; otherwise convert base64 to data URL
+        if (item.embeddedData.startsWith('data:')) {
+          return item.embeddedData;
+        }
+        const mimeType = item.mimeType || 'image/png';
+        return `data:${mimeType};base64,${item.embeddedData}`;
+      }
+      if (item.localPath) {
+        // Use localfile:// protocol for Electron security
+        return `localfile://${item.localPath}`;
+      }
+      if (item.path && !item.path.startsWith('http')) {
+        return `localfile://${item.path}`;
+      }
+      return item.path || null;
+    }
+    return null;
   };
 
   const getBgColorForType = (type: ResourceType, selected: boolean) => {
@@ -273,8 +309,26 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
                   <div className={`absolute left-0 top-0 bottom-0 w-1 bg-${item.color}`}></div>
                 )}
                 <div className="flex gap-3">
-                  <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center border ${getBgColorForType(item.type, selectedId === item.id)}`}>
-                    {getIconForType(item.type)}
+                  <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center border overflow-hidden ${getBgColorForType(item.type, selectedId === item.id)}`}>
+                    {(() => {
+                      const thumbnailSrc = getThumbnailSrc(item);
+                      return thumbnailSrc ? (
+                        <img
+                          src={thumbnailSrc}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // Fall back to icon on error - hide image and show icon
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const parent = (e.target as HTMLImageElement).parentElement;
+                            if (parent) {
+                              parent.innerHTML = '';
+                              // Re-render with icon (simple fallback)
+                            }
+                          }}
+                        />
+                      ) : getIconForType(item.type);
+                    })()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className={itemTitleClass(selectedId === item.id)}>{item.title}</h4>

@@ -14,6 +14,7 @@ export interface ItemIndexEntry {
   path?: string;
   localPath?: string;
   storageMode?: 'embed' | 'reference' | 'cloud';
+  thumbnailUrl?: string; // Cached thumbnail URL or data URL
 }
 
 export interface LibraryData {

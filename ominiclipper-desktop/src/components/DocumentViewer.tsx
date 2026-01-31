@@ -143,7 +143,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ item, onClose }) => {
           if (filePath && !filePath.startsWith('http') && !filePath.startsWith('blob:')) {
             console.log('Reading file as ArrayBuffer from:', filePath);
             try {
-              const result = await (window as any).electronAPI.fs.readFile(filePath);
+              const result = await (window as any).electronAPI.readFile(filePath);
               if (result.success && result.buffer) {
                 // Electron sends buffer as Uint8Array/Buffer, convert to ArrayBuffer
                 // Note: result.buffer from IPC might be a Node Buffer, which matches Uint8Array

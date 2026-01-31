@@ -104,6 +104,24 @@ const App: React.FC = () => {
   // Only run when storage is ready and we have items
   useDataIntegrity(items, isStorageReady);
 
+  // 7. Subscribe to item updates (for thumbnail generation, etc.)
+  useEffect(() => {
+    const unsubscribe = storageService.onItemUpdate((itemId, updates) => {
+      // If thumbnailUrl was updated, refresh the items to show the new thumbnail
+      if (updates.thumbnailUrl) {
+        console.log('[App] Thumbnail updated for item:', itemId);
+        setItems(prevItems =>
+          prevItems.map(item =>
+            item.id === itemId
+              ? { ...item, thumbnailUrl: updates.thumbnailUrl }
+              : item
+          )
+        );
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   // --- Derived State ---
   // selectedItem state - loaded asynchronously with full data from metadata.json
   const [selectedItem, setSelectedItem] = useState<ResourceItem | null>(null);

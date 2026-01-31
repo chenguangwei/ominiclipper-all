@@ -9,6 +9,33 @@ import { vectorStoreService } from '../vectorStoreService';
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // ============================================
+// Item Update Listeners (for UI refresh)
+// ============================================
+type ItemUpdateListener = (itemId: string, updates: Partial<ResourceItem>) => void;
+const itemUpdateListeners: Set<ItemUpdateListener> = new Set();
+
+/**
+ * Subscribe to item updates (e.g., for thumbnail generation completion)
+ */
+export const onItemUpdate = (listener: ItemUpdateListener): (() => void) => {
+    itemUpdateListeners.add(listener);
+    return () => itemUpdateListeners.delete(listener);
+};
+
+/**
+ * Notify all listeners of an item update
+ */
+const notifyItemUpdate = (itemId: string, updates: Partial<ResourceItem>) => {
+    itemUpdateListeners.forEach(listener => {
+        try {
+            listener(itemId, updates);
+        } catch (e) {
+            console.error('[Storage] Error in item update listener:', e);
+        }
+    });
+};
+
+// ============================================
 // Index Operations (library.json)
 // ============================================
 
@@ -42,7 +69,7 @@ export const getItemsAsResourceItems = (): ResourceItem[] => {
         aiSummary: undefined,
         embeddedData: undefined,
         originalPath: undefined,
-        thumbnailUrl: undefined,
+        thumbnailUrl: entry.thumbnailUrl,
         description: undefined,
         fileHash: undefined,
         storageMode: (entry.storageMode as FileStorageMode) || 'reference',
@@ -108,7 +135,7 @@ export const getItemById = async (id: string): Promise<ResourceItem | null> => {
         aiSummary: undefined,
         embeddedData: undefined,
         originalPath: undefined,
-        thumbnailUrl: undefined,
+        thumbnailUrl: indexEntry.thumbnailUrl,
         description: undefined,
         fileHash: undefined,
         storageMode: (indexEntry.storageMode as FileStorageMode) || 'reference',
@@ -146,6 +173,7 @@ export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'upd
         path: newItem.path,
         localPath: newItem.localPath,
         storageMode: newItem.storageMode,
+        thumbnailUrl: newItem.thumbnailUrl,
     };
 
     const items = getItems();
@@ -196,6 +224,7 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
         path: updates.path ?? items[index].path,
         localPath: updates.localPath ?? items[index].localPath,
         storageMode: updates.storageMode ?? items[index].storageMode,
+        thumbnailUrl: updates.thumbnailUrl ?? items[index].thumbnailUrl,
     };
     saveItems(items);
 
@@ -207,6 +236,9 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
             );
         });
     }
+
+    // 4. Notify listeners of the update (for UI refresh)
+    notifyItemUpdate(id, updates);
 
     // Return full item
     return getItemById(id);
@@ -282,8 +314,16 @@ export const permanentlyDeleteItem = async (id: string): Promise<boolean> => {
         return false;
     }
 
-    const itemTitle = items[index].title;
-    console.log(`[Storage] permanentlyDeleteItem - deleting: ${itemTitle}`);
+    const item = items[index];
+    const itemTitle = item.title;
+    console.log(`[Storage] permanentlyDeleteItem - deleting: ${itemTitle}, mode: ${item.storageMode}`);
+
+    // SAFEGUARD: For reference mode, we strictly DO NOT delete the external file.
+    // The `deleteItemStorage` IPC only deletes the internal ID folder (metadata), which is correct.
+    if (item.storageMode === 'reference') {
+        console.log(`[Storage] Reference mode detected. External source file at "${item.localPath}" will be PRESERVED.`);
+        console.log(`[Storage] Only removing application metadata and internal index.`);
+    }
 
     // 1. Remove from index
     items.splice(index, 1);

@@ -111,9 +111,14 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
   };
 
   // Helper to get thumbnail source - supports all file types with cached thumbnails
+  // Uses localfile:// protocol which is registered in Electron main process
   const getThumbnailSrc = (item: ResourceItem): string | null => {
     // First priority: cached thumbnail (generated for all types)
     if (item.thumbnailUrl) {
+      // Convert file:// to localfile:// for Electron security
+      if (item.thumbnailUrl.startsWith('file://')) {
+        return item.thumbnailUrl.replace('file://', 'localfile://');
+      }
       return item.thumbnailUrl;
     }
     // For images: use embedded data or file path directly
@@ -127,8 +132,11 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
         return `data:${mimeType};base64,${item.embeddedData}`;
       }
       if (item.localPath) {
-        // 使用正确的 file:// 协议，或者使用 data URL（如果可能）
-        return item.localPath.startsWith('file://') ? item.localPath : `file://${item.localPath}`;
+        // Use localfile:// protocol for Electron security
+        return `localfile://${item.localPath}`;
+      }
+      if (item.path && !item.path.startsWith('http')) {
+        return `localfile://${item.path}`;
       }
       return item.path || null;
     }
