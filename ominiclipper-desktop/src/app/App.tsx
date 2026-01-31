@@ -104,6 +104,14 @@ const App: React.FC = () => {
   // Only run when storage is ready and we have items
   useDataIntegrity(items, isStorageReady);
 
+  // Debug: Track items state changes
+  useEffect(() => {
+    console.log('[App] Items state changed, count:', items.length);
+    if (items.length > 0) {
+      console.log('[App] First 3 item IDs:', items.slice(0, 3).map(i => i.id));
+    }
+  }, [items]);
+
   // 7. Subscribe to item updates (for thumbnail generation, etc.)
   useEffect(() => {
     const unsubscribe = storageService.onItemUpdate((itemId, updates) => {
@@ -180,6 +188,10 @@ const App: React.FC = () => {
   const handleMoveItemToFolder = async (itemId: string, targetFolderId: string) => {
     console.log(`[App] Moving item ${itemId} to folder ${targetFolderId}`);
 
+    // Get the item before moving to preserve folder info
+    const item = items.find(i => i.id === itemId);
+    const sourceFolderId = item?.folderId;
+
     // Special folder handling
     if (targetFolderId === 'trash') {
       // Move to trash = soft delete
@@ -196,9 +208,10 @@ const App: React.FC = () => {
       await storageService.updateItem(itemId, { folderId: newFolderId });
     }
 
-    // Refresh items list
-    const newItems = storageService.getItemsAsResourceItems();
-    setItems([...newItems]);
+    // Refresh items, folders, and tags (for updated counts)
+    setItems([...storageService.getItemsAsResourceItems()]);
+    setFolders([...storageService.getFolders()]);
+    setTags([...storageService.getTags()]);
     console.log(`[App] Item moved successfully`);
   };
 

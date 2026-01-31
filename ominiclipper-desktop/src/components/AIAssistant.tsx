@@ -36,7 +36,12 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // ... (effects remain same)
+  // Use ref to always access latest items (avoid stale closure)
+  const itemsRef = useRef<ResourceItem[]>(items);
+  useEffect(() => {
+    itemsRef.current = items;
+    console.log('[AIAssistant] Items prop updated, count:', items.length);
+  }, [items]);
 
   useEffect(() => {
     if (isOpen && messages.length === 0) {
@@ -70,18 +75,46 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
   };
 
   const handleSourceClickInChat = (docId: string, title?: string, text?: string) => {
+    // Use ref to get latest items (avoids stale closure issue)
+    const currentItems = itemsRef.current;
+
+    console.log('[AIAssistant] ========== SOURCE CLICK DEBUG ==========');
+    console.log('[AIAssistant] Clicked docId:', docId);
+    console.log('[AIAssistant] Clicked title:', title);
+    console.log('[AIAssistant] Items count (from ref):', currentItems.length);
+
     // Try to find the item locally first for split view
-    const item = items.find(i => i.id === docId);
+    const item = currentItems.find(i => i.id === docId);
 
     if (item) {
+      console.log('[AIAssistant] ✓ Item FOUND:', item.title, 'path:', item.path);
       setPreviewItem(item);
       setPreviewHighlight(text || null);
     } else {
-      // Fallback to navigation if not found (or some other logic)
+      // Debug: Look for partial matches to diagnose ID mismatch
+      console.log('[AIAssistant] ✗ Item NOT found with exact ID match');
+      console.log('[AIAssistant] Looking for similar IDs...');
+
+      // Check if docId is a substring of any item ID or vice versa
+      const partialMatches = currentItems.filter(i =>
+        i.id.includes(docId) || docId.includes(i.id) ||
+        i.title?.toLowerCase() === title?.toLowerCase()
+      );
+
+      if (partialMatches.length > 0) {
+        console.log('[AIAssistant] Partial/title matches found:', partialMatches.map(i => ({ id: i.id, title: i.title })));
+      }
+
+      // Log all item IDs for comparison (limit to first 20 to avoid console spam)
+      console.log('[AIAssistant] All item IDs (first 20):', currentItems.slice(0, 20).map(i => i.id));
+
+      // Fallback to navigation if not found
+      console.log('[AIAssistant] Calling onNavigateToItem as fallback');
       if (onNavigateToItem) {
         onNavigateToItem(docId, text);
       }
     }
+    console.log('[AIAssistant] ========================================');
   };
 
   const handleClosePreview = () => {
@@ -132,6 +165,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
       }
 
       const results = await hybridSearchService.search({ query: question, limit: 5 });
+      console.log('[AIAssistant] Search results:', results.map(r => ({ id: r.id, title: r.title, score: r.score })));
       const context = results.map(r => r.text).join('\n\n');
       const savedProvider = localStorage.getItem('OMNICLIPPER_DEFAULT_PROVIDER') as any || 'openai';
 

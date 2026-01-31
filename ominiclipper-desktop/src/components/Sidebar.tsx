@@ -115,7 +115,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           onDragOver={(e) => {
             e.preventDefault();
             if (isDropTarget) {
-              e.dataTransfer.dropEffect = 'copy';
+              // Check if it's an internal item drag
+              const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+              if (itemData) {
+                e.dataTransfer.dropEffect = 'move';
+              } else {
+                e.dataTransfer.dropEffect = 'copy';
+              }
               setDragOverFolderId(id);
             }
           }}
@@ -130,12 +136,16 @@ const Sidebar: React.FC<SidebarProps> = ({
             e.stopPropagation();
             setDragOverFolderId(null);
 
+            console.log(`[Sidebar] onDrop triggered for folder ${id}, files: ${e.dataTransfer.files.length}`);
+
             // Check for internal item drag first
             const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+            console.log(`[Sidebar] itemData: "${itemData}"`);
+
             if (itemData && isDropTarget) {
               try {
                 const { itemId, itemTitle } = JSON.parse(itemData);
-                console.log(`[Sidebar] Moving item "${itemTitle}" to folder ${id}`);
+                console.log(`[Sidebar] Moving item "${itemTitle}" (${itemId}) to folder ${id}`);
                 onMoveItemToFolder?.(itemId, id);
               } catch (err) {
                 console.error('[Sidebar] Failed to parse item drag data:', err);
@@ -145,6 +155,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             // Fall back to OS file drop
             if (isDropTarget && onDropOnFolder && e.dataTransfer.files.length > 0) {
+              console.log(`[Sidebar] OS file drop detected, files count: ${e.dataTransfer.files.length}`);
               onDropOnFolder(id, e.dataTransfer.files);
             }
           }}
