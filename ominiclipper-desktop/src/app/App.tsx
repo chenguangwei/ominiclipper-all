@@ -190,7 +190,27 @@ const App: React.FC = () => {
 
     // Get the item before moving to preserve folder info
     const item = items.find(i => i.id === itemId);
-    const sourceFolderId = item?.folderId;
+
+    // Edge case: item doesn't exist
+    if (!item) {
+      console.warn(`[App] Cannot move: item ${itemId} not found`);
+      return;
+    }
+
+    // Edge case: item is deleted (in trash) - only allow moving to trash (no-op) or restoring
+    if (item.deletedAt && targetFolderId !== 'trash') {
+      console.warn(`[App] Cannot move deleted item ${itemId} to folder. Restore it first.`);
+      return;
+    }
+
+    const sourceFolderId = item.folderId;
+
+    // Edge case: moving to the same folder (no-op)
+    const effectiveTargetFolderId = ['all', 'uncategorized'].includes(targetFolderId) ? undefined : targetFolderId;
+    if (targetFolderId !== 'trash' && sourceFolderId === effectiveTargetFolderId) {
+      console.log(`[App] Item already in folder ${targetFolderId}, skipping`);
+      return;
+    }
 
     // Special folder handling
     if (targetFolderId === 'trash') {
@@ -201,18 +221,21 @@ const App: React.FC = () => {
       console.warn(`[App] Cannot move items to virtual folder: ${targetFolderId}`);
       return;
     } else {
+      // Edge case: validate target folder exists (for real folders, not 'all'/'uncategorized')
+      if (effectiveTargetFolderId && !folders.find(f => f.id === effectiveTargetFolderId)) {
+        console.warn(`[App] Cannot move: target folder ${targetFolderId} not found`);
+        return;
+      }
+
       // Normal folder or 'all'/'uncategorized' (which means remove folder)
-      const newFolderId = ['all', 'uncategorized'].includes(targetFolderId)
-        ? undefined
-        : targetFolderId;
-      await storageService.updateItem(itemId, { folderId: newFolderId });
+      await storageService.updateItem(itemId, { folderId: effectiveTargetFolderId });
     }
 
     // Refresh items, folders, and tags (for updated counts)
     setItems([...storageService.getItemsAsResourceItems()]);
     setFolders([...storageService.getFolders()]);
     setTags([...storageService.getTags()]);
-    console.log(`[App] Item moved successfully`);
+    console.log(`[App] Item moved successfully from ${sourceFolderId || 'none'} to ${targetFolderId}`);
   };
 
   // 7. Navigation & Highlighting

@@ -49,9 +49,11 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
     e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
     e.dataTransfer.effectAllowed = 'move';
     setDraggingItemId(item.id);
+    console.log(`[ListDetailView] Drag started for item: ${item.title} (${item.id})`);
   };
 
   const handleItemDragEnd = () => {
+    console.log(`[ListDetailView] Drag ended, clearing draggingItemId`);
     setDraggingItemId(null);
   };
 

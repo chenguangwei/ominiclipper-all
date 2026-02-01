@@ -147,6 +147,13 @@ export const useDragDrop = (
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         dragCounterRef.current++;
+
+        // Skip drag overlay for internal item drags (handled by Sidebar)
+        const isInternalDrag = e.dataTransfer.types.includes('application/x-omnicollector-item');
+        if (isInternalDrag) {
+            return;
+        }
+
         if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
             setIsDragOver(true);
         }
@@ -164,6 +171,13 @@ export const useDragDrop = (
         e.preventDefault();
         dragCounterRef.current = 0;
         setIsDragOver(false);
+
+        // Skip if this is an internal item drag (handled by Sidebar)
+        const isInternalDrag = e.dataTransfer.types.includes('application/x-omnicollector-item');
+        if (isInternalDrag) {
+            console.log('[useDragDrop] Internal item drag detected, skipping file import dialog');
+            return;
+        }
 
         const files = e.dataTransfer.files;
 

@@ -41,9 +41,11 @@ const TableView: React.FC<TableViewProps> = ({
     e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
     e.dataTransfer.effectAllowed = 'move';
     setDraggingItemId(item.id);
+    console.log(`[TableView] Drag started for item: ${item.title} (${item.id})`);
   };
 
   const handleItemDragEnd = () => {
+    console.log(`[TableView] Drag ended, clearing draggingItemId`);
     setDraggingItemId(null);
   };
 

@@ -110,25 +110,27 @@ const Sidebar: React.FC<SidebarProps> = ({
     return (
       <div key={id} className="select-none">
         <div
+          data-folder-id={id}
           onClick={onClick}
           onContextMenu={onContextMenu}
           onDragOver={(e) => {
             e.preventDefault();
             if (isDropTarget) {
-              // Check if it's an internal item drag
-              const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
-              if (itemData) {
-                e.dataTransfer.dropEffect = 'move';
-              } else {
-                e.dataTransfer.dropEffect = 'copy';
-              }
+              // Check if it's an internal item drag via types (data is not accessible during dragover)
+              const isInternalDrag = e.dataTransfer.types.includes('application/x-omnicollector-item');
+              e.dataTransfer.dropEffect = isInternalDrag ? 'move' : 'copy';
               setDragOverFolderId(id);
             }
           }}
           onDragLeave={(e) => {
-            e.preventDefault();
+            // Only clear if we're actually leaving the entire sidebar area
+            // Use a timeout to avoid flickering when moving to child elements
             if (dragOverFolderId === id) {
-              setDragOverFolderId(null);
+              // Check if leaving to outside the sidebar
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              if (!e.currentTarget.contains(relatedTarget) && !e.currentTarget.parentElement?.contains(relatedTarget)) {
+                setDragOverFolderId(null);
+              }
             }
           }}
           onDrop={(e) => {
@@ -161,9 +163,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           }}
           className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors ${isActive ? 'bg-primary text-white' : 'text-content-secondary hover:bg-surface-tertiary hover:text-content'} ${isDropTarget && dragOverFolderId === id ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
         >
-          {/* Arrow */}
+          {/* Arrow - keep clickable for expand/collapse */}
           <div
-            className={`w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 ${hasChildren ? 'visible' : 'invisible'}`}
+            className={`w-4 h-4 flex items-center justify-center rounded hover:bg-white/10 ${hasChildren ? 'visible' : 'invisible'} pointer-events-auto`}
             onClick={(e) => hasChildren && toggleExpand(id, e)}
           >
             <Icon
@@ -172,9 +174,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
           </div>
 
-          <Icon name={icon} className={`text-[18px] ${isActive ? 'text-white' : (iconColor || 'text-content-secondary')}`} />
-          <span className="flex-1 truncate">{label}</span>
-          {count !== undefined && <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-content-secondary'}`}>{count}</span>}
+          {/* Icon, label, count - prevent from interfering with drop */}
+          <Icon name={icon} className={`text-[18px] pointer-events-none ${isActive ? 'text-white' : (iconColor || 'text-content-secondary')}`} />
+          <span className="flex-1 truncate pointer-events-none">{label}</span>
+          {count !== undefined && <span className={`text-[10px] pointer-events-none ${isActive ? 'text-white/80' : 'text-content-secondary'}`}>{count}</span>}
         </div>
 
         {/* Children Container */}
@@ -228,7 +231,50 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      <aside className="w-64 border-r border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-secondary flex flex-col overflow-y-auto no-scrollbar shrink-0 select-none text-content-secondary">
+      <aside
+        className="w-64 border-r border-[rgb(var(--color-border)/var(--border-opacity))] bg-surface-secondary flex flex-col overflow-y-auto no-scrollbar shrink-0 select-none text-content-secondary"
+        onDragOver={(e) => {
+          e.preventDefault();
+          // Check if it's an internal item drag via types (data is not accessible during dragover)
+          const isInternalDrag = e.dataTransfer.types.includes('application/x-omnicollector-item');
+          e.dataTransfer.dropEffect = isInternalDrag ? 'move' : 'copy';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOverFolderId(null);
+
+          const itemData = e.dataTransfer.getData('application/x-omnicollector-item');
+          console.log(`[Sidebar] Container onDrop, itemData: "${itemData ? 'exists' : 'empty'}"`);
+
+          if (itemData) {
+            try {
+              const { itemId, itemTitle } = JSON.parse(itemData);
+              // Try to find the closest folder element
+              const targetFolderDiv = (e.target as HTMLElement).closest('[data-folder-id]');
+              const targetFolderId = targetFolderDiv?.getAttribute('data-folder-id');
+
+              if (targetFolderId) {
+                console.log(`[Sidebar] Container onDrop: moving item "${itemTitle}" to folder ${targetFolderId}`);
+                onMoveItemToFolder?.(itemId, targetFolderId);
+              } else {
+                console.log(`[Sidebar] Container onDrop: no folder found under cursor, using last hovered: ${dragOverFolderId}`);
+                if (dragOverFolderId) {
+                  onMoveItemToFolder?.(itemId, dragOverFolderId);
+                }
+              }
+            } catch (err) {
+              console.error('[Sidebar] Container onDrop failed to parse item data:', err);
+            }
+          }
+
+          // Fall back to OS file drop
+          if (onDropOnFolder && e.dataTransfer.files.length > 0) {
+            console.log(`[Sidebar] Container onDrop: OS file drop, files: ${e.dataTransfer.files.length}`);
+            onDropOnFolder(dragOverFolderId || 'all', e.dataTransfer.files);
+          }
+        }}
+      >
 
         {/* Workspace Header */}
         <div className="h-12 flex items-center px-4 border-b border-[rgb(var(--color-border)/var(--border-opacity))] mb-2 hover:bg-surface-tertiary cursor-pointer transition-colors">
@@ -243,13 +289,19 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Library Section */}
           <div className="mb-4">
             <div
+              data-folder-id="all"
               onClick={() => onSelectFolder('all')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 setDragOverFolderId('all');
               }}
-              onDragLeave={() => setDragOverFolderId(null)}
+              onDragLeave={(e) => {
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                if (!e.currentTarget.contains(relatedTarget)) {
+                  setDragOverFolderId(null);
+                }
+              }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -267,20 +319,26 @@ const Sidebar: React.FC<SidebarProps> = ({
               }}
               className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'all' && !activeTagId ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'all' ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
             >
-              <span className="w-4"></span>
-              <Icon name="inbox" className={`text-[18px] ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">{t('sidebar.all')}</span>
-              <span className="text-[10px] opacity-50">{totalItems}</span>
+              <span className="w-4 pointer-events-none"></span>
+              <Icon name="inbox" className={`text-[18px] pointer-events-none ${activeFolderId === 'all' && !activeTagId ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1 pointer-events-none">{t('sidebar.all')}</span>
+              <span className="text-[10px] opacity-50 pointer-events-none">{totalItems}</span>
             </div>
 
             <div
+              data-folder-id="uncategorized"
               onClick={() => onSelectFolder('uncategorized')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 setDragOverFolderId('uncategorized');
               }}
-              onDragLeave={() => setDragOverFolderId(null)}
+              onDragLeave={(e) => {
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                if (!e.currentTarget.contains(relatedTarget)) {
+                  setDragOverFolderId(null);
+                }
+              }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -298,28 +356,34 @@ const Sidebar: React.FC<SidebarProps> = ({
               }}
               className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'uncategorized' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'uncategorized' ? 'ring-2 ring-primary ring-inset bg-primary/10' : ''}`}
             >
-              <span className="w-4"></span>
-              <Icon name="folder_off" className={`text-[18px] ${activeFolderId === 'uncategorized' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">{t('sidebar.uncategorized')}</span>
+              <span className="w-4 pointer-events-none"></span>
+              <Icon name="folder_off" className={`text-[18px] pointer-events-none ${activeFolderId === 'uncategorized' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1 pointer-events-none">{t('sidebar.uncategorized')}</span>
             </div>
 
             <div
               onClick={() => onSelectFolder('starred')}
               className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'starred' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'}`}
             >
-              <span className="w-4"></span>
-              <Icon name="star" className={`text-[18px] ${activeFolderId === 'starred' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">{t('sidebar.favorites')}</span>
+              <span className="w-4 pointer-events-none"></span>
+              <Icon name="star" className={`text-[18px] pointer-events-none ${activeFolderId === 'starred' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1 pointer-events-none">{t('sidebar.favorites')}</span>
             </div>
 
             <div
+              data-folder-id="trash"
               onClick={() => onSelectFolder('trash')}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
                 setDragOverFolderId('trash');
               }}
-              onDragLeave={() => setDragOverFolderId(null)}
+              onDragLeave={(e) => {
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                if (!e.currentTarget.contains(relatedTarget)) {
+                  setDragOverFolderId(null);
+                }
+              }}
               onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -337,9 +401,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               }}
               className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer ${activeFolderId === 'trash' ? 'bg-primary text-white' : 'hover:bg-surface-tertiary hover:text-content'} ${dragOverFolderId === 'trash' ? 'ring-2 ring-red-500 ring-inset bg-red-500/10' : ''}`}
             >
-              <span className="w-4"></span>
-              <Icon name="delete" className={`text-[18px] ${activeFolderId === 'trash' ? 'text-white' : 'text-content-secondary'}`} />
-              <span className="flex-1">{t('sidebar.trash')}</span>
+              <span className="w-4 pointer-events-none"></span>
+              <Icon name="delete" className={`text-[18px] pointer-events-none ${activeFolderId === 'trash' ? 'text-white' : 'text-content-secondary'}`} />
+              <span className="flex-1 pointer-events-none">{t('sidebar.trash')}</span>
             </div>
           </div>
 

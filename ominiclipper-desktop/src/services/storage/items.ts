@@ -212,12 +212,13 @@ export const updateItem = async (id: string, updates: Partial<ResourceItem>): Pr
     }
 
     // 2. Update index entry
+    // Note: Use 'in' check for folderId since undefined is a valid value (means "no folder")
     items[index] = {
         ...items[index],
         title: updates.title ?? items[index].title,
         type: updates.type ?? items[index].type,
         tags: updates.tags ?? items[index].tags,
-        folderId: updates.folderId ?? items[index].folderId,
+        folderId: 'folderId' in updates ? updates.folderId : items[index].folderId,
         color: updates.color ?? items[index].color,
         isStarred: updates.isStarred ?? items[index].isStarred,
         updatedAt: now,

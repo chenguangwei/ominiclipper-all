@@ -39,9 +39,11 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
     e.dataTransfer.setData('application/x-omnicollector-item', JSON.stringify(dragData));
     e.dataTransfer.effectAllowed = 'move';
     setDraggingItemId(item.id);
+    console.log(`[GridView] Drag started for item: ${item.title} (${item.id})`);
   };
 
   const handleItemDragEnd = () => {
+    console.log(`[GridView] Drag ended, clearing draggingItemId`);
     setDraggingItemId(null);
   };
 
