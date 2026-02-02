@@ -122,6 +122,7 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
       case ResourceType.WEB: return <Icon name="language" className="text-tag-green text-[24px]" />;
       case ResourceType.IMAGE: return <Icon name="image" className="text-tag-yellow text-[24px]" />;
       case ResourceType.MARKDOWN: return <Icon name="article" className="text-tag-blue text-[24px]" />;
+      case ResourceType.ARTICLE: return <Icon name="article" className="text-tag-purple text-[24px]" />;
       case ResourceType.PPT: return <Icon name="slideshow" className="text-tag-orange text-[24px]" />;
       case ResourceType.EXCEL: return <Icon name="table_chart" className="text-tag-green text-[24px]" />;
       default: return <Icon name="draft" className={isLight ? 'text-gray-400 text-[24px]' : 'text-content-secondary text-[24px]'} />;
@@ -142,13 +143,13 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
     // For images: use embedded data or file path directly
     if (item.type === ResourceType.IMAGE) {
       // Support both embeddedData (desktop native) and imageData (browser extension import)
-      const imageData = item.embeddedData || (item as any).imageData;
+      const imageData = item.embeddedData || item.imageData;
       if (imageData) {
         // If already a data URL, use directly; otherwise convert base64 to data URL
         if (imageData.startsWith('data:')) {
           return imageData;
         }
-        const mimeType = item.mimeType || 'image/png';
+        const mimeType = item.mimeType || item.imageMimeType || 'image/png';
         return `data:${mimeType};base64,${imageData}`;
       }
       if (item.localPath) {
@@ -159,6 +160,12 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
         return `localfile://${item.path}`;
       }
       return item.path || null;
+    }
+    // For ARTICLE type from browser extension: use favicon as thumbnail
+    if (item.type === ResourceType.ARTICLE) {
+      if (item.favicon) {
+        return item.favicon;
+      }
     }
     return null;
   };

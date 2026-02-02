@@ -324,10 +324,34 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
   console.log('[fileHelpers] getFileData called for item:', item.id, item.title, 'type:', item.type);
   console.log('[fileHelpers] Item path:', item.path, 'localPath:', item.localPath);
 
+  // For ARTICLE or IMAGE types from browser extension, check if we need to load full metadata
+  // This is needed because the item from list only has lightweight index data (doesn't include markdown, imageData, etc.)
+  let fullItem = item;
+  if ((item.type === ResourceType.ARTICLE || item.type === ResourceType.IMAGE) &&
+      !item.markdown && !item.imageData && !item.embeddedData) {
+    console.log('[fileHelpers] Lightweight item detected, loading full metadata from storage...');
+    try {
+      const { getItemById } = await import('../services/storage/items');
+      const loadedItem = await getItemById(item.id);
+      if (loadedItem) {
+        fullItem = loadedItem;
+        console.log('[fileHelpers] Loaded full item, has markdown:', !!fullItem.markdown, 'has imageData:', !!fullItem.imageData);
+      }
+    } catch (e) {
+      console.warn('[fileHelpers] Failed to load full item metadata:', e);
+    }
+  }
+
   // 1. Try Embedded Data first (base64 encoded) - desktop native format
-  if (item.embeddedData) {
+  if (fullItem.embeddedData) {
     console.log('[fileHelpers] Using embedded data');
-    const binaryString = atob(item.embeddedData);
+    // Handle data URL format (may come from imageData being assigned to embeddedData)
+    let base64Data = fullItem.embeddedData;
+    if (fullItem.embeddedData.startsWith('data:')) {
+      base64Data = fullItem.embeddedData.split(',')[1];
+      console.log('[fileHelpers] Extracted base64 from data URL');
+    }
+    const binaryString = atob(base64Data);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
@@ -336,11 +360,11 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
   }
 
   // 1b. Also support imageData from browser extension
-  if (item.imageData) {
+  if (fullItem.imageData) {
     console.log('[fileHelpers] Using imageData from browser extension');
     // Handle data URL format
-    if (item.imageData.startsWith('data:')) {
-      const base64 = item.imageData.split(',')[1];
+    if (fullItem.imageData.startsWith('data:')) {
+      const base64 = fullItem.imageData.split(',')[1];
       const binaryString = atob(base64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -349,7 +373,7 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
       return bytes.buffer;
     }
     // Handle raw base64
-    const binaryString = atob(item.imageData);
+    const binaryString = atob(fullItem.imageData);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
@@ -358,10 +382,10 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
   }
 
   // 1c. Support markdown from browser extension (for captured articles)
-  if (item.markdown) {
-    console.log('[fileHelpers] Using markdown content from browser extension, length:', item.markdown.length);
+  if (fullItem.markdown) {
+    console.log('[fileHelpers] Using markdown content from browser extension, length:', fullItem.markdown.length);
     const encoder = new TextEncoder();
-    return encoder.encode(item.markdown).buffer;
+    return encoder.encode(fullItem.markdown).buffer;
   }
 
   // 2. Check if path is a blob: URL (these expire on restart and can't be recovered)

@@ -29,7 +29,7 @@ import ImportProgress from '@/components/ImportProgress';
 
 // Services & Utils
 import * as storageService from '@/services/storageService';
-import { ViewMode, FilterState, ResourceItem, Tag, Folder } from '@/types';
+import { ViewMode, FilterState, ResourceItem, Tag, Folder, ResourceType } from '@/types';
 
 // Custom Hooks
 import { useAppInit } from '@/hooks/useAppInit';
@@ -159,6 +159,44 @@ const App: React.FC = () => {
   }, [selectedItemId, items]);
 
   // --- Handlers (that require App context) ---
+
+  // Handler for opening items - ARTICLE and browser extension IMAGE types open in browser directly
+  const handleOpenItem = async (item: ResourceItem) => {
+    // For ARTICLE type from browser extension, open in browser directly
+    if (item.type === ResourceType.ARTICLE) {
+      const url = item.sourceUrl || item.path;
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        console.warn('[App] ARTICLE item has no valid URL to open');
+      }
+      return;
+    }
+
+    // For IMAGE type from browser extension, open in browser directly
+    if (item.type === ResourceType.IMAGE) {
+      // If sourceUrl is in index, use it directly
+      if (item.sourceUrl) {
+        window.open(item.sourceUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      // For existing items, sourceUrl might only be in full metadata (backward compatibility)
+      // Load full item to check for sourceUrl
+      try {
+        const fullItem = await storageService.getItemById(item.id);
+        if (fullItem?.sourceUrl) {
+          window.open(fullItem.sourceUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+      } catch (e) {
+        console.warn('[App] Failed to load full item metadata:', e);
+      }
+      // If no sourceUrl found, this is a local image - open in DocumentViewer
+    }
+
+    // For other types, open in DocumentViewer
+    setDocumentViewerItem(item);
+  };
 
   const handleDeleteResource = async (id: string) => {
     const itemToDelete = items.find(i => i.id === id);
@@ -427,7 +465,7 @@ const App: React.FC = () => {
                 sortType={sortType}
                 onSortChange={setSortType}
                 colorMode={colorMode}
-                onOpen={setDocumentViewerItem}
+                onOpen={handleOpenItem}
                 onDelete={handleDeleteResource}
                 onEdit={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
               />
@@ -438,7 +476,7 @@ const App: React.FC = () => {
                     onEdit={() => { setEditingItem(selectedItem); setIsCreateResourceOpen(true); }}
                     onDelete={() => handleDeleteResource(selectedItem.id)}
                     getTagName={getTagName}
-                    onOpenDocument={setDocumentViewerItem}
+                    onOpenDocument={handleOpenItem}
                     // Pass highlight text
                     highlightText={highlightText}
                     availableTags={tags} // Pass all tags for inline selector
@@ -456,7 +494,7 @@ const App: React.FC = () => {
               selectedId={selectedItemId}
               onSelect={setSelectedItemId}
               getTagName={getTagName}
-              onOpen={setDocumentViewerItem}
+              onOpen={handleOpenItem}
               onEdit={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
               onDelete={handleDeleteResource}
             />
@@ -466,7 +504,7 @@ const App: React.FC = () => {
               selectedId={selectedItemId}
               onSelect={setSelectedItemId}
               getTagName={getTagName}
-              onOpen={setDocumentViewerItem}
+              onOpen={handleOpenItem}
               onEdit={(item) => { setEditingItem(item); setIsCreateResourceOpen(true); }}
               onDelete={handleDeleteResource}
             />

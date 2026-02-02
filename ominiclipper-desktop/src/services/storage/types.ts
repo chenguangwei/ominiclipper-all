@@ -15,6 +15,9 @@ export interface ItemIndexEntry {
   localPath?: string;
   storageMode?: 'embed' | 'reference' | 'cloud';
   thumbnailUrl?: string; // Cached thumbnail URL or data URL
+  // Browser extension specific fields for quick access (avoid loading full metadata)
+  favicon?: string; // Website favicon URL for ARTICLE type thumbnail
+  sourceUrl?: string; // Original source URL for opening in browser
 }
 
 export interface LibraryData {

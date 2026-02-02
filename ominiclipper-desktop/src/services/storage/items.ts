@@ -73,6 +73,9 @@ export const getItemsAsResourceItems = (): ResourceItem[] => {
         description: undefined,
         fileHash: undefined,
         storageMode: (entry.storageMode as FileStorageMode) || 'reference',
+        // Browser extension specific fields from index
+        favicon: entry.favicon,
+        sourceUrl: entry.sourceUrl,
     })) || [];
 };
 
@@ -174,6 +177,9 @@ export const addItem = async (item: Omit<ResourceItem, 'id' | 'createdAt' | 'upd
         localPath: newItem.localPath,
         storageMode: newItem.storageMode,
         thumbnailUrl: newItem.thumbnailUrl,
+        // Browser extension specific fields for quick access
+        favicon: newItem.favicon,
+        sourceUrl: newItem.sourceUrl,
     };
 
     const items = getItems();

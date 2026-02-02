@@ -106,6 +106,7 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
       case ResourceType.WEB: return <Icon name="language" className="text-tag-green text-[40px]" />;
       case ResourceType.IMAGE: return <Icon name="image" className="text-tag-yellow text-[40px]" />;
       case ResourceType.MARKDOWN: return <Icon name="article" className="text-tag-blue text-[40px]" />;
+      case ResourceType.ARTICLE: return <Icon name="article" className="text-tag-purple text-[40px]" />;
       case ResourceType.PPT: return <Icon name="slideshow" className="text-tag-orange text-[40px]" />;
       case ResourceType.EXCEL: return <Icon name="table_chart" className="text-tag-green text-[40px]" />;
       default: return <Icon name="article" className={isLight ? 'text-gray-400 text-[40px]' : 'text-slate-400 text-[40px]'} />;
@@ -126,13 +127,13 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
     // For images: use embedded data or file path directly
     if (item.type === ResourceType.IMAGE) {
       // Support both embeddedData (desktop native) and imageData (browser extension import)
-      const imageData = item.embeddedData || (item as any).imageData;
+      const imageData = item.embeddedData || item.imageData;
       if (imageData) {
         // If already a data URL, use directly; otherwise convert base64 to data URL
         if (imageData.startsWith('data:')) {
           return imageData;
         }
-        const mimeType = item.mimeType || 'image/png';
+        const mimeType = item.mimeType || item.imageMimeType || 'image/png';
         return `data:${mimeType};base64,${imageData}`;
       }
       if (item.localPath) {
@@ -143,6 +144,12 @@ const GridView: React.FC<GridViewProps> = ({ items, selectedId, onSelect, getTag
         return `localfile://${item.path}`;
       }
       return item.path || null;
+    }
+    // For ARTICLE type from browser extension: use favicon as thumbnail
+    if (item.type === ResourceType.ARTICLE) {
+      if (item.favicon) {
+        return item.favicon;
+      }
     }
     return null;
   };
