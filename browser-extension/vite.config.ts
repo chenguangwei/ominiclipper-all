@@ -3,24 +3,49 @@ import fs from 'fs';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Plugin to handle post-build tasks (copying _locales, renaming popup)
+// Plugin to handle post-build tasks
 function extensionBuildPlugin() {
   return {
     name: 'extension-build',
     closeBundle: () => {
       const distDir = path.resolve(__dirname, 'dist');
 
-      // Copy _locales if exists (public directory handled by Vite automatically)
+      // Copy _locales if exists
       const localesDir = path.resolve(__dirname, '_locales');
       const distLocalesDir = path.resolve(distDir, '_locales');
       if (fs.existsSync(localesDir)) {
         fs.cpSync(localesDir, distLocalesDir, { recursive: true, force: true });
       }
 
-      // Rename index.html from src/popup/index.html build to popup.html if needed,
-      // but if we key it as 'popup' in input, it might output as popup.html or src/popup/index.html.
-      // Easiest is to let it be what it is and ensure manifest matches, OR flattened.
-      // For now, let's keep it simple.
+      // Move popup.html from dist/src/popup/index.html to dist/popup.html
+      const popupSrcPath = path.resolve(distDir, 'src/popup/index.html');
+      const popupDestPath = path.resolve(distDir, 'popup.html');
+      if (fs.existsSync(popupSrcPath)) {
+        // Read and update paths in HTML
+        let htmlContent = fs.readFileSync(popupSrcPath, 'utf-8');
+        // Fix JS path (from ../../popup.js to ./popup.js)
+        htmlContent = htmlContent.replace(/src="\.\.\/\.\.\/popup\.js"/g, 'src="./popup.js"');
+        // Fix CSS path (from ../assets/ to ./assets/)
+        htmlContent = htmlContent.replace(/href="\.\.\/assets\//g, 'href="./assets/');
+        htmlContent = htmlContent.replace(/href="\.\.\/\.\.\/assets\//g, 'href="./assets/');
+        fs.writeFileSync(popupDestPath, htmlContent);
+        console.log('[extension-build] Moved popup.html to dist root');
+      }
+
+      // Copy content.css to dist root
+      const contentCssSrc = path.resolve(__dirname, 'src/content/content.css');
+      const contentCssDest = path.resolve(distDir, 'content.css');
+      if (fs.existsSync(contentCssSrc)) {
+        fs.copyFileSync(contentCssSrc, contentCssDest);
+        console.log('[extension-build] Copied content.css to dist root');
+      }
+
+      // Clean up src folder in dist (it's no longer needed)
+      const distSrcDir = path.resolve(distDir, 'src');
+      if (fs.existsSync(distSrcDir)) {
+        fs.rmSync(distSrcDir, { recursive: true, force: true });
+        console.log('[extension-build] Cleaned up dist/src folder');
+      }
     }
   };
 }
@@ -54,7 +79,7 @@ export default defineConfig(({ mode }) => {
         output: {
           entryFileNames: '[name].js',
           chunkFileNames: 'assets/[name]-[hash].js',
-          assetFileNames: 'assets/[name].[ext]', // Remove hash for stable filenames if needed for content.css
+          assetFileNames: 'assets/[name].[ext]',
         }
       }
     }

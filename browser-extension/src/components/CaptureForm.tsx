@@ -191,6 +191,9 @@ const CaptureForm: React.FC<CaptureFormProps> = ({ settings, onSaved }) => {
   useEffect(() => {
     if ((activeTab === 'website' || activeTab === 'image') && !url) {
       handleAutoFill(true);
+    } else if (activeTab === 'article' && !markdown && !isExtracting) {
+      // Auto-extract article when switching to article tab
+      handleExtractArticle();
     }
   }, [activeTab]);
 
@@ -345,6 +348,35 @@ const CaptureForm: React.FC<CaptureFormProps> = ({ settings, onSaved }) => {
             return;
           }
 
+          // For full page, send directly to background (it handles scrolling via scripting API)
+          if (mode === 'full') {
+            setIsFetching(true);
+            try {
+              const response = await chrome.runtime.sendMessage({
+                type: 'CAPTURE_FULL_PAGE'
+              });
+
+              if (response && response.success && response.dataUrl) {
+                setImageData(response.dataUrl);
+                // Get image dimensions
+                const img = new window.Image();
+                img.onload = () => {
+                  setImageSize({ width: img.width, height: img.height });
+                };
+                img.src = response.dataUrl;
+
+                // Set page info
+                setTitle(tab.title || 'Full Page Screenshot');
+                setUrl(tab.url || '');
+              } else {
+                setErrorMsg(response?.error || 'Failed to capture full page');
+              }
+            } finally {
+              setIsFetching(false);
+            }
+            return;
+          }
+
           // For area selection, need content script
           const scriptReady = await ensureContentScript(tab.id);
 
@@ -353,15 +385,10 @@ const CaptureForm: React.FC<CaptureFormProps> = ({ settings, onSaved }) => {
             return;
           }
 
-          const messageType = mode === 'area' ? 'START_AREA_SELECTION' : 'CAPTURE_FULL_PAGE';
-
           try {
-            await chrome.tabs.sendMessage(tab.id, { type: messageType });
-
+            await chrome.tabs.sendMessage(tab.id, { type: 'START_AREA_SELECTION' });
             // Close popup for area selection to show the overlay
-            if (mode === 'area') {
-              window.close();
-            }
+            window.close();
           } catch (e) {
             setErrorMsg('Failed to start screenshot. Please refresh the page.');
           }

@@ -67,7 +67,7 @@ function deletePortFile() {
 function mapResourceType(browserType) {
   const typeMap = {
     'WEB': 'WEB',
-    'ARTICLE': 'WEB',
+    'ARTICLE': 'ARTICLE',  // Keep ARTICLE type for markdown content preview
     'IMAGE': 'IMAGE',
     'NOTE': 'WEB'
   };
@@ -98,6 +98,17 @@ function transformItem(itemData) {
     storageMode: itemData.storageMode,
     embeddedData: itemData.embeddedData,
     originalPath: itemData.originalPath,
+    // Article specific fields from browser extension
+    markdown: itemData.markdown,
+    author: itemData.author,
+    readingTime: itemData.readingTime,
+    favicon: itemData.favicon,
+    siteName: itemData.siteName,
+    // Image specific fields from browser extension
+    imageData: itemData.imageData,
+    imageMimeType: itemData.imageMimeType,
+    imageSize: itemData.imageSize,
+    sourceUrl: itemData.sourceUrl,
     source: 'browser-extension'
   };
 }

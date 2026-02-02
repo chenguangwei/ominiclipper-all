@@ -28,3 +28,5 @@ release
 *.sw?
 dist/
 dist-electron/
+# Claude Code instruction files
+**/CLAUDE.md

@@ -357,6 +357,32 @@ const App: React.FC = () => {
           setItems([...storageService.getItemsAsResourceItems()]);
         }}
         onMoveItemToFolder={handleMoveItemToFolder}
+        onRenameFolder={async (folderId, newName) => {
+          const result = storageService.updateFolder(folderId, { name: newName });
+          if (result) {
+            setFolders([...storageService.getFolders()]);
+            return true;
+          }
+          return false;
+        }}
+        onCloneFolder={async (folderId) => {
+          const { cloneFolder } = await import('@/services/folderOperations');
+          await cloneFolder(folderId, folders);
+          setFolders([...storageService.getFolders()]);
+        }}
+        onMoveFolder={async (folderId, targetParentId) => {
+          const { moveFolder } = await import('@/services/folderOperations');
+          const success = await moveFolder(folderId, targetParentId, folders);
+          if (success) {
+            setFolders([...storageService.getFolders()]);
+          }
+          return success;
+        }}
+        onChangeFolderIcon={async (folderId, icon, color) => {
+          storageService.updateFolder(folderId, { icon, color });
+          setFolders([...storageService.getFolders()]);
+        }}
+        setFolders={setFolders}
         colorMode={colorMode}
       />
 

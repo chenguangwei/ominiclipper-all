@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Tag, Folder, ColorMode } from '../types';
 import Icon from './Icon';
 import AIAssistant from './AIAssistant';
-import { INITIAL_FOLDERS, INITIAL_TAGS } from '../constants';
+import { INITIAL_TAGS } from '../constants';
+import FolderContextMenu from './FolderContextMenu';
+import RenameFolderDialog from './RenameFolderDialog';
+import MoveFolderDialog from './MoveFolderDialog';
+import { useFolderContextMenu } from '../hooks/useFolderContextMenu';
 
 interface SidebarProps {
   tags: Tag[];
@@ -21,8 +25,14 @@ interface SidebarProps {
   onCreateTag: () => void;
   onDeleteFolder: (id: string) => void;
   onDeleteTag: (id: string) => void;
-  onDropOnFolder?: (folderId: string, files: FileList) => void; // Callback when files dropped on folder
-  onMoveItemToFolder?: (itemId: string, targetFolderId: string) => Promise<void>; // Callback when item dragged to folder
+  onDropOnFolder?: (folderId: string, files: FileList) => void;
+  onMoveItemToFolder?: (itemId: string, targetFolderId: string) => Promise<void>;
+  // New folder context menu callbacks
+  onRenameFolder?: (folderId: string, newName: string) => Promise<boolean>;
+  onCloneFolder?: (folderId: string) => Promise<void>;
+  onMoveFolder?: (folderId: string, targetParentId: string | undefined) => Promise<boolean>;
+  onChangeFolderIcon?: (folderId: string, icon: string, color?: string) => Promise<void>;
+  setFolders?: (folders: Folder[]) => void;
   colorMode?: ColorMode;
 }
 
@@ -38,22 +48,36 @@ const Sidebar: React.FC<SidebarProps> = ({
   user,
   onOpenAuth,
   onCreateFolder,
-  onCreateSubfolder,
+  onCreateSubfolder: _onCreateSubfolder,
   onCreateTag,
   onDeleteFolder,
   onDeleteTag,
   onDropOnFolder,
   onMoveItemToFolder,
+  onRenameFolder,
+  onCloneFolder,
+  onMoveFolder,
+  onChangeFolderIcon,
+  setFolders,
   colorMode = 'dark',
 }) => {
   const { t } = useTranslation();
   void _activeColor;
   void _onSelectColor;
+  void _onCreateSubfolder;
   const isLight = colorMode === 'light';
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['root-folders', 'root-tags', 'f2']));
-  const [contextMenu, setContextMenu] = useState<{ type: 'folder' | 'tag'; id: string; x: number; y: number } | null>(null);
+  const [tagContextMenu, setTagContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+
+  // Folder context menu hook
+  const folderCtx = useFolderContextMenu({
+    folders,
+    setFolders: setFolders || (() => {}),
+    expandedIds,
+    setExpandedIds,
+  });
 
   const getFolderName = (folder: Folder) => {
     // Attempt to translate using folder ID
@@ -81,11 +105,18 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleContextMenu = (type: 'folder' | 'tag', id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ type, id, x: e.clientX, y: e.clientY });
+    if (type === 'folder') {
+      const folder = folders.find(f => f.id === id);
+      if (folder) {
+        folderCtx.openContextMenu(folder, { x: e.clientX, y: e.clientY });
+      }
+    } else {
+      setTagContextMenu({ id, x: e.clientX, y: e.clientY });
+    }
   };
 
-  const closeContextMenu = () => {
-    setContextMenu(null);
+  const closeTagContextMenu = () => {
+    setTagContextMenu(null);
   };
 
   // 计算资源总数
@@ -102,7 +133,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     count?: number,
     iconColor?: string,
     onContextMenu?: (e: React.MouseEvent) => void,
-    isDropTarget?: boolean
+    isDropTarget?: boolean,
+    isEditing?: boolean
   ) => {
     const hasChildren = React.Children.count(children) > 0;
     const isExpanded = expandedIds.has(id);
@@ -111,7 +143,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div key={id} className="select-none">
         <div
           data-folder-id={id}
-          onClick={onClick}
+          onClick={isEditing ? undefined : onClick}
           onContextMenu={onContextMenu}
           onDragOver={(e) => {
             e.preventDefault();
@@ -174,10 +206,37 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
           </div>
 
-          {/* Icon, label, count - prevent from interfering with drop */}
+          {/* Icon */}
           <Icon name={icon} className={`text-[18px] pointer-events-none ${isActive ? 'text-white' : (iconColor || 'text-content-secondary')}`} />
-          <span className="flex-1 truncate pointer-events-none">{label}</span>
-          {count !== undefined && <span className={`text-[10px] pointer-events-none ${isActive ? 'text-white/80' : 'text-content-secondary'}`}>{count}</span>}
+
+          {/* Label - show input when editing */}
+          {isEditing ? (
+            <input
+              type="text"
+              defaultValue={label === '未命名文件夹' ? '' : label}
+              placeholder="未命名文件夹"
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onBlur={(e) => folderCtx.handleInlineEditComplete(id, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  folderCtx.handleInlineEditComplete(id, e.currentTarget.value);
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  folderCtx.handleInlineEditCancel(id);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 bg-transparent border border-primary rounded px-1 text-sm outline-none text-content min-w-0"
+            />
+          ) : (
+            <span className="flex-1 truncate pointer-events-none">{label}</span>
+          )}
+
+          {/* Count - hide when editing */}
+          {!isEditing && count !== undefined && <span className={`text-[10px] pointer-events-none ${isActive ? 'text-white/80' : 'text-content-secondary'}`}>{count}</span>}
         </div>
 
         {/* Children Container */}
@@ -205,7 +264,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         folder.count,
         undefined,
         (e) => handleContextMenu('folder', folder.id, e),
-        true // Enable drop target
+        true, // Enable drop target
+        folderCtx.editingFolderId === folder.id // Inline editing
       )
     ));
   };
@@ -506,46 +566,77 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </aside>
 
-      {/* Context Menu */}
-      {contextMenu && (
+      {/* Folder Context Menu */}
+      {folderCtx.contextMenu && (
+        <FolderContextMenu
+          folder={folderCtx.contextMenu.folder}
+          position={folderCtx.contextMenu.position}
+          isOpen={true}
+          onClose={folderCtx.closeContextMenu}
+          folders={folders}
+          expandedIds={expandedIds}
+          isSystemFolder={folderCtx.isSystemFolder(folderCtx.contextMenu.folder.id)}
+          onCreateFolder={folderCtx.handleCreateSiblingFolder}
+          onCreateSubfolder={folderCtx.handleCreateChildFolder}
+          onRename={folderCtx.handleRename}
+          onDelete={onDeleteFolder}
+          onClone={onCloneFolder || folderCtx.handleClone}
+          onMove={folderCtx.handleMove}
+          onToggleExpand={folderCtx.handleToggleExpand}
+          onExpandSiblings={folderCtx.handleExpandSiblings}
+          onExpandAll={folderCtx.handleExpandAll}
+          onCollapseAll={folderCtx.handleCollapseAll}
+          onChangeIcon={onChangeFolderIcon || folderCtx.handleChangeIcon}
+          colorMode={colorMode}
+        />
+      )}
+
+      {/* Tag Context Menu */}
+      {tagContextMenu && (
         <>
-          <div className="fixed inset-0 z-[200]" onClick={closeContextMenu} />
+          <div className="fixed inset-0 z-[200]" onClick={closeTagContextMenu} />
           <div
             className="fixed z-[201] bg-surface-tertiary border border-[rgb(var(--color-border)/0.1)] rounded-lg shadow-xl py-1 min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+            style={{ left: tagContextMenu.x, top: tagContextMenu.y }}
           >
-            {contextMenu.type === 'folder' && (
+            {/* Delete Option - Protected for system tags */}
+            {!INITIAL_TAGS.some(t => t.id === tagContextMenu.id) && (
               <button
                 onClick={() => {
-                  onCreateSubfolder(contextMenu.id);
-                  closeContextMenu();
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-content hover:bg-surface-tertiary transition-colors"
-              >
-                <Icon name="create_new_folder" className="text-lg" />
-                Create Subfolder
-              </button>
-            )}
-
-            {/* Delete Option - Protected for system items */}
-            {!(INITIAL_FOLDERS.some(f => f.id === contextMenu.id) || INITIAL_TAGS.some(t => t.id === contextMenu.id)) && (
-              <button
-                onClick={() => {
-                  if (contextMenu.type === 'folder') {
-                    onDeleteFolder(contextMenu.id);
-                  } else {
-                    onDeleteTag(contextMenu.id);
-                  }
-                  closeContextMenu();
+                  onDeleteTag(tagContextMenu.id);
+                  closeTagContextMenu();
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-surface-tertiary transition-colors"
               >
                 <Icon name="delete" className="text-lg" />
-                Delete {contextMenu.type === 'folder' ? 'Folder' : 'Tag'}
+                {t('context_menu.delete_tag', 'Delete Tag')}
               </button>
             )}
           </div>
         </>
+      )}
+
+      {/* Rename Folder Dialog */}
+      {folderCtx.renameDialog && (
+        <RenameFolderDialog
+          isOpen={true}
+          folder={folderCtx.renameDialog.folder}
+          onConfirm={onRenameFolder || folderCtx.handleRenameConfirm}
+          onCancel={folderCtx.handleRenameCancel}
+          colorMode={colorMode}
+        />
+      )}
+
+      {/* Move Folder Dialog */}
+      {folderCtx.moveDialog && (
+        <MoveFolderDialog
+          isOpen={true}
+          folder={folderCtx.moveDialog.folder}
+          folders={folders}
+          onConfirm={onMoveFolder || folderCtx.handleMoveConfirm}
+          onCancel={folderCtx.handleMoveCancel}
+          colorMode={colorMode}
+        />
       )}
 
       {/* AI Assistant Panel */}

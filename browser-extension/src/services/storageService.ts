@@ -6,6 +6,85 @@ const STORAGE_KEY_SETTINGS = STORAGE_KEYS.SETTINGS;
 const STORAGE_KEY_TAGS = STORAGE_KEYS.TAGS;
 const STORAGE_KEY_FOLDERS = STORAGE_KEYS.FOLDERS;
 
+// IndexedDB for large data (images)
+const DB_NAME = 'omniclipper-storage';
+const DB_VERSION = 1;
+const STORE_LARGE_DATA = 'largeData';
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+const initDB = (): Promise<IDBDatabase> => {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_LARGE_DATA)) {
+        db.createObjectStore(STORE_LARGE_DATA, { keyPath: 'id' });
+      }
+    };
+  });
+
+  return dbPromise;
+};
+
+// Large data storage (images) using IndexedDB
+const saveLargeData = async (id: string, data: { imageData?: string; markdown?: string }): Promise<void> => {
+  try {
+    const db = await initDB();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_LARGE_DATA, 'readwrite');
+      const store = transaction.objectStore(STORE_LARGE_DATA);
+      const request = store.put({ id, ...data, updatedAt: Date.now() });
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('Failed to save large data to IndexedDB:', e);
+  }
+};
+
+const getLargeData = async <T = { imageData?: string; markdown?: string }>(id: string): Promise<T | null> => {
+  try {
+    const db = await initDB();
+    return await new Promise<T | null>((resolve, reject) => {
+      const transaction = db.transaction(STORE_LARGE_DATA, 'readonly');
+      const store = transaction.objectStore(STORE_LARGE_DATA);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('Failed to get large data from IndexedDB:', e);
+    return null;
+  }
+};
+
+const deleteLargeData = async (id: string): Promise<void> => {
+  try {
+    const db = await initDB();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_LARGE_DATA, 'readwrite');
+      const store = transaction.objectStore(STORE_LARGE_DATA);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('Failed to delete large data from IndexedDB:', e);
+  }
+};
+
+// Helper to check if data exceeds localStorage limit (roughly 2MB to be safe)
+const isLargeData = (data: string): boolean => {
+  return data.length > 1_500_000; // ~1.5MB limit for localStorage items
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   storageMode: 'local',
   feishuConfig: {
@@ -95,6 +174,41 @@ export const StorageService = {
     }
   },
 
+  // Get item with large data (images) loaded from IndexedDB
+  getItemWithLargeData: async (id: string): Promise<ResourceItem | undefined> => {
+    const items = StorageService.getItems();
+    const item = items.find(i => i.id === id);
+    if (!item) return undefined;
+
+    // Load large data from IndexedDB if present
+    const largeData = await getLargeData(id);
+    if (largeData) {
+      if (largeData.imageData) item.imageData = largeData.imageData;
+      if (largeData.markdown) item.markdown = largeData.markdown;
+    }
+    return item;
+  },
+
+  // Get all items with large data loaded from IndexedDB
+  getAllItemsWithLargeData: async (): Promise<ResourceItem[]> => {
+    const items = StorageService.getItems();
+
+    // Load large data for items that have it stored in IndexedDB
+    const itemsWithData: ResourceItem[] = [];
+    for (const item of items) {
+      const largeData = await getLargeData(item.id);
+      if (largeData) {
+        const itemWithData = { ...item };
+        if (largeData.imageData) itemWithData.imageData = largeData.imageData;
+        if (largeData.markdown) itemWithData.markdown = largeData.markdown;
+        itemsWithData.push(itemWithData);
+      } else {
+        itemsWithData.push(item);
+      }
+    }
+    return itemsWithData;
+  },
+
   saveItems: (items: ResourceItem[]): void => {
     try {
       localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
@@ -114,7 +228,27 @@ export const StorageService = {
     if (!item.updatedAt) {
       item.updatedAt = new Date().toISOString();
     }
-    const newItems = [item, ...items];
+
+    // Handle large data (images) - store in IndexedDB if too large
+    const itemToSave = { ...item };
+    const largeDataToSave: { imageData?: string; markdown?: string } = {};
+
+    if (item.imageData && isLargeData(item.imageData)) {
+      largeDataToSave.imageData = item.imageData;
+      delete itemToSave.imageData;
+    }
+
+    if (item.markdown && isLargeData(item.markdown)) {
+      largeDataToSave.markdown = item.markdown;
+      delete itemToSave.markdown;
+    }
+
+    // Save large data to IndexedDB if needed
+    if (Object.keys(largeDataToSave).length > 0) {
+      saveLargeData(item.id, largeDataToSave);
+    }
+
+    const newItems = [itemToSave, ...items];
     StorageService.saveItems(newItems);
 
     // Sync to desktop app asynchronously
@@ -147,6 +281,8 @@ export const StorageService = {
     const items = StorageService.getItems();
     const newItems = items.filter(i => i.id !== id);
     StorageService.saveItems(newItems);
+    // Also delete from IndexedDB
+    deleteLargeData(id);
     return newItems;
   },
 
@@ -155,6 +291,8 @@ export const StorageService = {
     const idSet = new Set(ids);
     const newItems = items.filter(i => !idSet.has(i.id));
     StorageService.saveItems(newItems);
+    // Also delete from IndexedDB
+    ids.forEach(id => deleteLargeData(id));
     return newItems;
   },
 
@@ -205,6 +343,98 @@ export const StorageService = {
     } catch (e) {
       console.error('Failed to save folders', e);
     }
+  },
+
+  addFolder: (folder: Omit<Folder, 'id'>): Folder => {
+    const folders = StorageService.getFolders();
+    // Check for duplicate name at same level
+    const existing = folders.find(f => f.name === folder.name && f.parentId === folder.parentId);
+    if (existing) {
+      return existing;
+    }
+    const newFolder: Folder = { ...folder, id: generateId() };
+    folders.push(newFolder);
+    StorageService.saveFolders(folders);
+    return newFolder;
+  },
+
+  updateFolder: (id: string, updates: Partial<Folder>): Folder | null => {
+    const folders = StorageService.getFolders();
+    const index = folders.findIndex(f => f.id === id);
+    if (index === -1) return null;
+    folders[index] = { ...folders[index], ...updates };
+    StorageService.saveFolders(folders);
+    return folders[index];
+  },
+
+  deleteFolder: (id: string): boolean => {
+    const folders = StorageService.getFolders();
+    if (!folders.find(f => f.id === id)) return false;
+
+    // Identify all folders to delete (recursive)
+    const idsToDelete = new Set<string>([id]);
+    let foundNew = true;
+    while (foundNew) {
+      foundNew = false;
+      folders.forEach(f => {
+        if (f.parentId && idsToDelete.has(f.parentId) && !idsToDelete.has(f.id)) {
+          idsToDelete.add(f.id);
+          foundNew = true;
+        }
+      });
+    }
+
+    // Remove folders
+    const filtered = folders.filter(f => !idsToDelete.has(f.id));
+    StorageService.saveFolders(filtered);
+
+    // Update items (orphan them)
+    const items = StorageService.getItems();
+    let itemsChanged = false;
+    items.forEach(i => {
+      if (i.folderId && idsToDelete.has(i.folderId)) {
+        i.folderId = undefined;
+        itemsChanged = true;
+      }
+    });
+    if (itemsChanged) {
+      StorageService.saveItems(items);
+    }
+
+    return true;
+  },
+
+  getFolderById: (id: string): Folder | undefined => {
+    const folders = StorageService.getFolders();
+    return folders.find(f => f.id === id);
+  },
+
+  getChildFolders: (parentId?: string): Folder[] => {
+    const folders = StorageService.getFolders();
+    return folders.filter(f => f.parentId === parentId);
+  },
+
+  getItemsByFolder: (folderId: string): ResourceItem[] => {
+    const items = StorageService.getItems();
+    if (folderId === 'all') {
+      return items;
+    }
+    if (folderId === 'uncategorized') {
+      return items.filter(i => !i.folderId);
+    }
+    return items.filter(i => i.folderId === folderId);
+  },
+
+  moveItemToFolder: (itemId: string, folderId: string | undefined): boolean => {
+    const items = StorageService.getItems();
+    const index = items.findIndex(i => i.id === itemId);
+    if (index === -1) return false;
+
+    // Handle special folder IDs
+    const actualFolderId = folderId === 'all' || folderId === 'uncategorized' ? undefined : folderId;
+    items[index] = { ...items[index], folderId: actualFolderId, updatedAt: new Date().toISOString() };
+    StorageService.saveItems(items);
+    return true;
   },
 
   // ========== Search and Filter ==========
@@ -346,6 +576,10 @@ export const StorageService = {
 
   clearAllItems: (): void => {
     localStorage.removeItem(STORAGE_KEY_ITEMS);
+    // Also clear IndexedDB
+    initDB().then(db => {
+      db.transaction(STORE_LARGE_DATA, 'readwrite').objectStore(STORE_LARGE_DATA).clear();
+    }).catch(() => {});
   },
 
   clearAllData: (): void => {
@@ -353,6 +587,15 @@ export const StorageService = {
     localStorage.removeItem(STORAGE_KEY_SETTINGS);
     localStorage.removeItem(STORAGE_KEY_TAGS);
     localStorage.removeItem(STORAGE_KEY_FOLDERS);
+    // Also clear IndexedDB
+    initDB().then(db => {
+      db.transaction(STORE_LARGE_DATA, 'readwrite').objectStore(STORE_LARGE_DATA).clear();
+    }).catch(() => {});
+  },
+
+  // Clear large data cache for specific item
+  clearLargeDataCache: async (id: string): Promise<void> => {
+    deleteLargeData(id);
   },
 
   // ========== Utilities ==========

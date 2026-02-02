@@ -74,7 +74,8 @@ export const useSync = (
     useEffect(() => {
         // Expose sync handler to window for Electron IPC callbacks
         (window as any).handleBrowserExtensionSync = async (item: ResourceItem) => {
-            console.log('[App] Received sync from browser extension:', item.title);
+            console.log('[App] Received sync from browser extension:', item.title, 'type:', item.type);
+            console.log('[App] Item has markdown:', !!item.markdown, 'length:', item.markdown?.length || 0);
 
             // Check if item already exists
             const existingIds = new Set(items.map(i => i.id));
@@ -83,12 +84,17 @@ export const useSync = (
                 return;
             }
 
-            // Add item to state and storage
-            const newItems = [item, ...items];
-            storageService.saveItems(newItems);
-            await storageService.flushPendingWrites();
-            setItems([...storageService.getItemsAsResourceItems()]);
-            console.log('[App] Synced item from browser extension:', item.title);
+            // Use addItem to save full metadata (including markdown) to files/{id}/metadata.json
+            // This is important for ARTICLE type items from browser extension
+            try {
+                const savedItem = await storageService.addItem(item);
+                console.log('[App] Synced item from browser extension:', savedItem.title, 'id:', savedItem.id);
+
+                // Refresh items list
+                setItems([...storageService.getItemsAsResourceItems()]);
+            } catch (error) {
+                console.error('[App] Failed to save item from browser extension:', error);
+            }
         };
 
         return () => {

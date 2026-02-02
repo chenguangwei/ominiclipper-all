@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
+import rehypeSlug from 'rehype-slug';
+import rehypeAutolinkHeadings from 'rehype-autolink-headings';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ResourceItem, ColorMode } from '../../../types';
 import Icon from '../../Icon';
+
+// Import KaTeX CSS for math rendering
+import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
   item: ResourceItem;
@@ -14,16 +25,16 @@ interface MarkdownRendererProps {
 }
 
 // Helper component to handle highlighting after render
-const HighlightedMarkdown: React.FC<{ content: string; highlightText?: string | null }> = ({ content, highlightText }) => {
-  // We use a specific ID to scope our search
+const HighlightedMarkdown: React.FC<{
+  content: string;
+  highlightText?: string | null;
+  colorMode: ColorMode;
+}> = ({ content, highlightText, colorMode }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const isLight = colorMode === 'light';
 
   useEffect(() => {
     if (!highlightText || !containerRef.current) return;
-
-    // Simple textual Highlight:
-    // This is a naive implementation. A robust one requires traversing text nodes.
-    // For MVP, let's find the text node containing the string and scroll to it.
 
     const findAndHighlight = () => {
       // Clean previous highlights
@@ -51,9 +62,6 @@ const HighlightedMarkdown: React.FC<{ content: string; highlightText?: string | 
         const idx = node.textContent?.toLowerCase().indexOf(highlightText.toLowerCase());
         if (idx !== undefined && idx !== -1) {
           nodesToHighlight.push({ node, index: idx });
-          // Highlight all or just first? Let's highlight first relevant one for deep linking
-          // Actually, for deep link, we usually just want to jump to the first one.
-          // Let's break after first match for performance in large docs if we just want to jump.
           break;
         }
       }
@@ -75,17 +83,215 @@ const HighlightedMarkdown: React.FC<{ content: string; highlightText?: string | 
       }
     };
 
-    // Small delay to ensure rendering
     setTimeout(findAndHighlight, 100);
-
   }, [content, highlightText]);
+
+  // Custom components for react-markdown
+  const components = {
+    // Code block with syntax highlighting
+    code({ node, inline, className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || '');
+      const language = match ? match[1] : '';
+
+      if (!inline && language) {
+        return (
+          <SyntaxHighlighter
+            style={isLight ? oneLight : oneDark}
+            language={language}
+            PreTag="div"
+            className="rounded-lg !my-4"
+            showLineNumbers={true}
+            {...props}
+          >
+            {String(children).replace(/\n$/, '')}
+          </SyntaxHighlighter>
+        );
+      }
+
+      // Inline code
+      return (
+        <code
+          className={`px-1.5 py-0.5 rounded text-sm font-mono ${
+            isLight
+              ? 'bg-gray-100 text-pink-600'
+              : 'bg-gray-800 text-pink-400'
+          }`}
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    },
+
+    // Table styling
+    table({ children }: any) {
+      return (
+        <div className="overflow-x-auto my-4">
+          <table className={`min-w-full border-collapse ${
+            isLight ? 'border-gray-300' : 'border-gray-600'
+          }`}>
+            {children}
+          </table>
+        </div>
+      );
+    },
+    th({ children }: any) {
+      return (
+        <th className={`px-4 py-2 text-left font-semibold border ${
+          isLight
+            ? 'bg-gray-100 border-gray-300'
+            : 'bg-gray-800 border-gray-600'
+        }`}>
+          {children}
+        </th>
+      );
+    },
+    td({ children }: any) {
+      return (
+        <td className={`px-4 py-2 border ${
+          isLight ? 'border-gray-300' : 'border-gray-600'
+        }`}>
+          {children}
+        </td>
+      );
+    },
+
+    // Blockquote styling
+    blockquote({ children }: any) {
+      return (
+        <blockquote className={`border-l-4 pl-4 my-4 italic ${
+          isLight
+            ? 'border-blue-500 bg-blue-50 text-gray-700'
+            : 'border-blue-400 bg-blue-900/20 text-gray-300'
+        } py-2 rounded-r`}>
+          {children}
+        </blockquote>
+      );
+    },
+
+    // Link styling with external indicator
+    a({ href, children }: any) {
+      const isExternal = href?.startsWith('http');
+      return (
+        <a
+          href={href}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noopener noreferrer' : undefined}
+          className={`underline decoration-1 underline-offset-2 ${
+            isLight
+              ? 'text-blue-600 hover:text-blue-800'
+              : 'text-blue-400 hover:text-blue-300'
+          }`}
+        >
+          {children}
+          {isExternal && <span className="text-xs ml-1">↗</span>}
+        </a>
+      );
+    },
+
+    // Image styling
+    img({ src, alt }: any) {
+      return (
+        <img
+          src={src}
+          alt={alt || ''}
+          className="max-w-full h-auto rounded-lg my-4 shadow-md"
+          loading="lazy"
+        />
+      );
+    },
+
+    // Heading with anchor link icon (works with rehype-slug and rehype-autolink-headings)
+    // The anchor link is prepended by rehype-autolink-headings, styled via CSS
+    h1({ children, id }: any) {
+      return (
+        <h1 id={id} className={`group relative text-3xl font-bold mt-8 mb-4 pb-2 border-b ${
+          isLight ? 'border-gray-200' : 'border-gray-700'
+        } [&>.anchor-link]:absolute [&>.anchor-link]:-left-6 [&>.anchor-link]:opacity-0 [&>.anchor-link]:transition-opacity hover:[&>.anchor-link]:opacity-100 [&>.anchor-link]:text-gray-400 [&>.anchor-link]:no-underline`}>
+          {children}
+        </h1>
+      );
+    },
+    h2({ children, id }: any) {
+      return (
+        <h2 id={id} className={`group relative text-2xl font-bold mt-6 mb-3 pb-2 border-b ${
+          isLight ? 'border-gray-200' : 'border-gray-700'
+        } [&>.anchor-link]:absolute [&>.anchor-link]:-left-5 [&>.anchor-link]:opacity-0 [&>.anchor-link]:transition-opacity hover:[&>.anchor-link]:opacity-100 [&>.anchor-link]:text-gray-400 [&>.anchor-link]:no-underline`}>
+          {children}
+        </h2>
+      );
+    },
+    h3({ children, id }: any) {
+      return (
+        <h3 id={id} className="group relative text-xl font-semibold mt-5 mb-2 [&>.anchor-link]:absolute [&>.anchor-link]:-left-4 [&>.anchor-link]:opacity-0 [&>.anchor-link]:transition-opacity hover:[&>.anchor-link]:opacity-100 [&>.anchor-link]:text-gray-400 [&>.anchor-link]:no-underline">
+          {children}
+        </h3>
+      );
+    },
+    h4({ children, id }: any) {
+      return (
+        <h4 id={id} className="group relative text-lg font-semibold mt-4 mb-2 [&>.anchor-link]:absolute [&>.anchor-link]:-left-4 [&>.anchor-link]:opacity-0 [&>.anchor-link]:transition-opacity hover:[&>.anchor-link]:opacity-100 [&>.anchor-link]:text-gray-400 [&>.anchor-link]:no-underline">
+          {children}
+        </h4>
+      );
+    },
+
+    // Task list item (GFM)
+    li({ children, className }: any) {
+      const isTaskItem = className?.includes('task-list-item');
+      if (isTaskItem) {
+        return (
+          <li className="list-none flex items-start gap-2 my-1">
+            {children}
+          </li>
+        );
+      }
+      return <li className="my-1">{children}</li>;
+    },
+
+    // Horizontal rule
+    hr() {
+      return (
+        <hr className={`my-8 border-t ${
+          isLight ? 'border-gray-300' : 'border-gray-600'
+        }`} />
+      );
+    },
+  };
 
   return (
     <div ref={containerRef}>
-      <Markdown>{content}</Markdown>
+      <Markdown
+        remarkPlugins={[
+          remarkGfm,
+          remarkMath,
+        ]}
+        rehypePlugins={[
+          rehypeRaw,
+          rehypeKatex,
+          rehypeSlug,
+          [rehypeAutolinkHeadings, {
+            behavior: 'prepend',
+            properties: {
+              className: ['anchor-link'],
+              ariaHidden: true,
+              tabIndex: -1,
+            },
+            content: {
+              type: 'element',
+              tagName: 'span',
+              properties: { className: ['anchor-icon'] },
+              children: [{ type: 'text', value: '#' }],
+            },
+          }],
+        ]}
+        components={components}
+      >
+        {content}
+      </Markdown>
     </div>
   );
-}
+};
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   item,
@@ -124,6 +330,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
               <HighlightedMarkdown
                 content={markdownContent}
                 highlightText={highlightText}
+                colorMode={colorMode}
               />
             </div>
           ) : (

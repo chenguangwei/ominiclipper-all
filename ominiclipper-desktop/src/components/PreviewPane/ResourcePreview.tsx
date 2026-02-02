@@ -75,6 +75,18 @@ const ResourcePreview: React.FC<ResourcePreviewProps> = ({
             colorMode={colorMode}
           />
         );
+      case ResourceType.ARTICLE:
+        // Articles from browser extension are rendered as markdown
+        return (
+          <MarkdownRenderer
+            item={item}
+            content={content}
+            loading={loading}
+            error={error}
+            onOpenDocument={onOpenDocument}
+            colorMode={colorMode}
+          />
+        );
       case ResourceType.IMAGE:
         return (
           <ImageRenderer

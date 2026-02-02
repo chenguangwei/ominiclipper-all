@@ -1,11 +1,16 @@
-import { FeishuConfig, SavedItem } from '../types';
+import { FeishuConfig, ResourceItem } from '../types';
 
 /**
  * Feishu Service - Production-ready API integration
  *
- * NOTE: For production use, API calls should be routed through the background script
- * to avoid CORS issues. This service can be used directly in the background script
- * or with a proper backend proxy.
+ * This service handles all Feishu API calls. In browser extension context,
+ * API calls are routed through the background script to avoid CORS issues.
+ *
+ * Usage from popup/content script:
+ * - Use FeishuServiceProxy methods (which use chrome.runtime.sendMessage)
+ *
+ * Usage from background script:
+ * - Use FeishuService methods directly
  */
 
 interface TenantAccessTokenResponse {
@@ -133,7 +138,7 @@ export const FeishuService = {
   /**
    * Create a record in Feishu Base
    */
-  createRecord: async (config: FeishuConfig, item: SavedItem): Promise<{ success: boolean; recordId?: string; error?: string }> => {
+  createRecord: async (config: FeishuConfig, item: ResourceItem): Promise<{ success: boolean; recordId?: string; error?: string }> => {
     try {
       // Validate configuration
       if (!config.appToken || !config.tableId) {
@@ -142,7 +147,7 @@ export const FeishuService = {
 
       const token = await getTenantAccessToken(config);
 
-      // Map SavedItem to Feishu Base Fields
+      // Map ResourceItem to Feishu Base Fields
       // Assumes Base has fields: "Title" (Text), "Content" (Rich Text), "URL" (Url), "Type" (Single Select), "Tags" (Multi Select), "CreatedAt" (DateTime)
       const fields: Record<string, any> = {
         'Title': item.title,
@@ -222,7 +227,7 @@ export const FeishuService = {
   /**
    * Update a record in Feishu Base
    */
-  updateRecord: async (config: FeishuConfig, recordId: string, updates: Partial<SavedItem>): Promise<{ success: boolean; error?: string }> => {
+  updateRecord: async (config: FeishuConfig, recordId: string, updates: Partial<ResourceItem>): Promise<{ success: boolean; error?: string }> => {
     try {
       if (!config.appToken || !config.tableId) {
         return { success: false, error: 'Feishu Base is not configured' };
@@ -332,7 +337,7 @@ export const FeishuService = {
   /**
    * Batch create records in Feishu Base (for bulk sync)
    */
-  batchCreateRecords: async (config: FeishuConfig, items: SavedItem[]): Promise<{ success: boolean; created: number; failed: number; error?: string }> => {
+  batchCreateRecords: async (config: FeishuConfig, items: ResourceItem[]): Promise<{ success: boolean; created: number; failed: number; error?: string }> => {
     try {
       if (!config.appToken || !config.tableId) {
         return { success: false, created: 0, failed: 0, error: 'Feishu Base is not configured' };

@@ -5,6 +5,7 @@ export enum ResourceType {
   WEB = 'WEB',
   IMAGE = 'IMAGE',
   MARKDOWN = 'MARKDOWN',
+  ARTICLE = 'ARTICLE', // From browser extension
   PPT = 'PPT',
   EXCEL = 'EXCEL',
   UNKNOWN = 'UNKNOWN'
@@ -33,7 +34,10 @@ export interface Folder {
   name: string;
   parentId?: string;
   icon?: string;
-  count?: number; // Calculated dynamically
+  color?: string;           // Folder color (hex or preset name like 'red', 'blue')
+  isQuickAccess?: boolean;  // Quick access / pinned folder
+  sortOrder?: number;       // Custom sort order for manual reordering
+  count?: number;           // Calculated dynamically
 }
 
 export interface ResourceItem {
@@ -60,6 +64,18 @@ export interface ResourceItem {
   description?: string; // Auto-generated or manual description from content
   fileHash?: string; // SHA-256 hash for deduplication
   deletedAt?: string; // ISO date string if in trash
+  // Article specific fields from browser extension
+  markdown?: string; // Markdown content for ARTICLE type
+  author?: string; // Article author
+  readingTime?: number; // Estimated reading time in minutes
+  favicon?: string; // Website favicon URL
+  siteName?: string; // Website name
+  // Image specific fields from browser extension
+  imageData?: string; // Base64 encoded image data (data URL format)
+  imageMimeType?: string; // Image MIME type (e.g., 'image/png')
+  imageSize?: { width: number; height: number }; // Image dimensions
+  sourceUrl?: string; // Original URL where image was captured
+  source?: string; // Source identifier (e.g., 'browser-extension')
 }
 
 // File system entry for file browser

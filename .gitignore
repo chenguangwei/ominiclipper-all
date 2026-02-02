@@ -36,5 +36,18 @@ ominiclipper-desktop/release/builder-debug.yml
 temp_model_cache/
 package-lock.json
 dist-electron/
-docs/CLAUDE.md
-*/CLAUDE.md
+# Claude Code instruction files
+**/CLAUDE.md
+CLAUDE.md
+ominiclipper-desktop/src/components/PreviewPane/CLAUDE.md
+ominiclipper-desktop/src/services/CLAUDE.md
+ominiclipper-desktop/src/services/CLAUDE.md
+ominiclipper-desktop/src/services/CLAUDE.md
+ominiclipper-desktop/src/types/CLAUDE.md
+ominiclipper-desktop/src/utils/CLAUDE.md
+ominiclipper-desktop/src/types/CLAUDE.md
+ominiclipper-desktop/src/utils/CLAUDE.md
+ominiclipper-desktop/src/components/PreviewPane/CLAUDE.md
+ominiclipper-desktop/src/components/PreviewPane/renderers/CLAUDE.md
+ominiclipper-desktop/src/components/PreviewPane/CLAUDE.md
+ominiclipper-desktop/src/utils/CLAUDE.md

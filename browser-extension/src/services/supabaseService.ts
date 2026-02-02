@@ -1,4 +1,4 @@
-import { SavedItem, SupabaseConfig, UserSession } from '../types';
+import { ResourceItem, SupabaseConfig, UserSession } from '../types';
 
 /**
  * Supabase Service - Complete Data Synchronization
@@ -332,7 +332,7 @@ export const SupabaseService = {
    */
   createRecord: async (
     config: SupabaseConfig,
-    item: SavedItem,
+    item: ResourceItem,
     session?: UserSession
   ): Promise<{ success: boolean; id?: string; error?: string }> => {
     try {
@@ -390,7 +390,7 @@ export const SupabaseService = {
     config: SupabaseConfig,
     id: string,
     session?: UserSession
-  ): Promise<{ success: boolean; data?: SavedItem; error?: string }> => {
+  ): Promise<{ success: boolean; data?: ResourceItem; error?: string }> => {
     try {
       if (!config.url || !config.anonKey || !config.tableName) {
         return { success: false, error: 'Supabase configuration missing' };
@@ -422,7 +422,7 @@ export const SupabaseService = {
 
       return {
         success: true,
-        data: mapRecordToSavedItem(data[0])
+        data: mapRecordToResourceItem(data[0])
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -443,7 +443,7 @@ export const SupabaseService = {
       limit?: number;
       offset?: number;
     }
-  ): Promise<{ success: boolean; data?: SavedItem[]; error?: string; total?: number }> => {
+  ): Promise<{ success: boolean; data?: ResourceItem[]; error?: string; total?: number }> => {
     try {
       if (!config.url || !config.anonKey || !config.tableName) {
         return { success: false, error: 'Supabase configuration missing' };
@@ -490,7 +490,7 @@ export const SupabaseService = {
       }
 
       const data = await response.json();
-      const items = data.map(mapRecordToSavedItem);
+      const items = data.map(mapRecordToResourceItem);
 
       return { success: true, data: items };
     } catch (error) {
@@ -505,7 +505,7 @@ export const SupabaseService = {
   updateRecord: async (
     config: SupabaseConfig,
     id: string,
-    updates: Partial<SavedItem>,
+    updates: Partial<ResourceItem>,
     session?: UserSession
   ): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -597,7 +597,7 @@ export const SupabaseService = {
    */
   batchCreate: async (
     config: SupabaseConfig,
-    items: SavedItem[],
+    items: ResourceItem[],
     session?: UserSession
   ): Promise<{ success: boolean; created: number; failed: number; error?: string }> => {
     try {
@@ -705,7 +705,7 @@ export const SupabaseService = {
    */
   syncPendingItems: async (
     config: SupabaseConfig,
-    items: SavedItem[],
+    items: ResourceItem[],
     session?: UserSession
   ): Promise<{ synced: number; failed: number; errors: string[] }> => {
     const results = { synced: 0, failed: 0, errors: [] as string[] };
@@ -734,7 +734,7 @@ export const SupabaseService = {
     config: SupabaseConfig,
     session: UserSession,
     lastSyncTime?: number
-  ): Promise<{ success: boolean; data?: SavedItem[]; error?: string }> => {
+  ): Promise<{ success: boolean; data?: ResourceItem[]; error?: string }> => {
     try {
       const filters: Record<string, any> = {};
 
@@ -756,9 +756,9 @@ export const SupabaseService = {
 };
 
 /**
- * Map database record to SavedItem
+ * Map database record to ResourceItem
  */
-function mapRecordToSavedItem(record: any): SavedItem {
+function mapRecordToResourceItem(record: any): ResourceItem {
   return {
     id: record.id,
     type: record.type,

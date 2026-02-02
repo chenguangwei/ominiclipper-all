@@ -141,13 +141,15 @@ const ListDetailView: React.FC<ListDetailViewProps> = ({
     }
     // For images: use embedded data or file path directly
     if (item.type === ResourceType.IMAGE) {
-      if (item.embeddedData) {
+      // Support both embeddedData (desktop native) and imageData (browser extension import)
+      const imageData = item.embeddedData || (item as any).imageData;
+      if (imageData) {
         // If already a data URL, use directly; otherwise convert base64 to data URL
-        if (item.embeddedData.startsWith('data:')) {
-          return item.embeddedData;
+        if (imageData.startsWith('data:')) {
+          return imageData;
         }
         const mimeType = item.mimeType || 'image/png';
-        return `data:${mimeType};base64,${item.embeddedData}`;
+        return `data:${mimeType};base64,${imageData}`;
       }
       if (item.localPath) {
         // Use localfile:// protocol for Electron security

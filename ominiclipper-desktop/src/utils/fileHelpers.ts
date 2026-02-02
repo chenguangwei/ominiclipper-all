@@ -321,10 +321,10 @@ export async function recoverItemPath(item: ResourceItem): Promise<string | null
  * Returns ArrayBuffer for use with docx-preview, PDF.js, etc.
  */
 export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
-  console.log('[fileHelpers] getFileData called for item:', item.id, item.title);
+  console.log('[fileHelpers] getFileData called for item:', item.id, item.title, 'type:', item.type);
   console.log('[fileHelpers] Item path:', item.path, 'localPath:', item.localPath);
 
-  // 1. Try Embedded Data first (base64 encoded)
+  // 1. Try Embedded Data first (base64 encoded) - desktop native format
   if (item.embeddedData) {
     console.log('[fileHelpers] Using embedded data');
     const binaryString = atob(item.embeddedData);
@@ -333,6 +333,35 @@ export const getFileData = async (item: ResourceItem): Promise<ArrayBuffer> => {
       bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes.buffer;
+  }
+
+  // 1b. Also support imageData from browser extension
+  if (item.imageData) {
+    console.log('[fileHelpers] Using imageData from browser extension');
+    // Handle data URL format
+    if (item.imageData.startsWith('data:')) {
+      const base64 = item.imageData.split(',')[1];
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+    // Handle raw base64
+    const binaryString = atob(item.imageData);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  // 1c. Support markdown from browser extension (for captured articles)
+  if (item.markdown) {
+    console.log('[fileHelpers] Using markdown content from browser extension, length:', item.markdown.length);
+    const encoder = new TextEncoder();
+    return encoder.encode(item.markdown).buffer;
   }
 
   // 2. Check if path is a blob: URL (these expire on restart and can't be recovered)

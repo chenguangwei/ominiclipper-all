@@ -11,7 +11,7 @@ export interface Rect {
 export async function captureArea(rect: Rect) {
     try {
         const response = await chrome.runtime.sendMessage({
-            type: 'CAPTURE_VISIBLE_TAB',
+            type: 'CAPTURE_VISIBLE_TAB_REQUEST',
             rect: rect
         });
 
@@ -64,7 +64,7 @@ export async function captureArea(rect: Rect) {
 export async function captureVisible() {
     try {
         const response = await chrome.runtime.sendMessage({
-            type: 'CAPTURE_VISIBLE_TAB'
+            type: 'CAPTURE_VISIBLE_TAB_REQUEST'
         });
 
         if (response && response.success) {

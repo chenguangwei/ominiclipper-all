@@ -42,6 +42,18 @@ export interface ItemMetadata {
   contentSnippet: string | null;
   aiSummary: string | null;
   embeddedData: string | null;
+  // Image specific fields from browser extension
+  imageData: string | null;  // Base64 encoded image data (data URL format)
+  imageMimeType: string | null; // Image MIME type (e.g., 'image/png')
+  imageSize: { width: number; height: number } | null; // Image dimensions
+  sourceUrl: string | null;  // Original URL where image was captured
+  // Article specific fields from browser extension
+  markdown: string | null;   // Markdown content for ARTICLE type
+  author: string | null;     // Article author
+  readingTime: number | null; // Estimated reading time in minutes
+  favicon: string | null;    // Website favicon URL
+  siteName: string | null;   // Website name
+  source: string | null;     // Source identifier (e.g., 'browser-extension')
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -58,6 +70,9 @@ export interface ItemMetadata {
  * Convert full ResourceItem to ItemMetadata
  */
 export const resourceItemToMetadata = (item: ResourceItem): ItemMetadata => {
+  // 支持浏览器扩展的 imageData 字段
+  const imageData = item.imageData || null;
+
   return {
     id: item.id,
     name: item.title,
@@ -66,17 +81,29 @@ export const resourceItemToMetadata = (item: ResourceItem): ItemMetadata => {
     tags: item.tags,
     folderId: item.folderId || null,
     color: item.color,
-    path: item.path,
-    localPath: item.localPath,
-    originalPath: item.originalPath,
+    path: item.path || null,
+    localPath: item.localPath || null,
+    originalPath: item.originalPath || null,
     storageMode: item.storageMode || 'reference',
     fileSize: item.fileSize || 0,
     mimeType: item.mimeType || '',
     isCloud: item.isCloud || false,
     isStarred: item.isStarred || false,
     contentSnippet: item.contentSnippet || null,
-    aiSummary: (item as any).aiSummary || null,
+    aiSummary: item.aiSummary || null,
     embeddedData: item.embeddedData || null,
+    // Image specific fields from browser extension
+    imageData: imageData,
+    imageMimeType: item.imageMimeType || null,
+    imageSize: item.imageSize || null,
+    sourceUrl: item.sourceUrl || null,
+    // Article specific fields from browser extension
+    markdown: item.markdown || null,
+    author: item.author || null,
+    readingTime: item.readingTime || null,
+    favicon: item.favicon || null,
+    siteName: item.siteName || null,
+    source: item.source || null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     deletedAt: item.deletedAt,
@@ -90,6 +117,11 @@ export const resourceItemToMetadata = (item: ResourceItem): ItemMetadata => {
  * Convert ItemMetadata to ResourceItem
  */
 export const metadataToResourceItem = (meta: ItemMetadata): ResourceItem => {
+  // 如果有 imageData，使用它作为 embeddedData（兼容桌面端）
+  // imageData 来自浏览器扩展，embeddedData 是桌面端原生格式
+  const embeddedData = meta.imageData || meta.embeddedData || undefined;
+  console.log('[ItemMeta] metadataToResourceItem:', meta.id, 'meta.imageData:', !!meta.imageData, 'meta.embeddedData:', !!meta.embeddedData, 'result embeddedData:', !!embeddedData, 'markdown:', !!meta.markdown);
+
   return {
     id: meta.id,
     title: meta.title,
@@ -106,7 +138,19 @@ export const metadataToResourceItem = (meta: ItemMetadata): ResourceItem => {
     isCloud: meta.isCloud,
     isStarred: meta.isStarred,
     contentSnippet: meta.contentSnippet || undefined,
-    embeddedData: meta.embeddedData || undefined,
+    embeddedData: embeddedData,
+    // Image specific fields from browser extension
+    imageData: meta.imageData || undefined,
+    imageMimeType: meta.imageMimeType || undefined,
+    imageSize: meta.imageSize || undefined,
+    sourceUrl: meta.sourceUrl || undefined,
+    // Article specific fields from browser extension
+    markdown: meta.markdown || undefined,
+    author: meta.author || undefined,
+    readingTime: meta.readingTime || undefined,
+    favicon: meta.favicon || undefined,
+    siteName: meta.siteName || undefined,
+    source: meta.source || undefined,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     deletedAt: meta.deletedAt,
@@ -160,7 +204,11 @@ export const readItemMetadata = async (
 ): Promise<ItemMetadata | null> => {
   if (isElectron()) {
     try {
-      return await (window as any).electronAPI.fileStorageAPI.readItemMetadata(itemId);
+      const result = await (window as any).electronAPI.fileStorageAPI.readItemMetadata(itemId);
+      if (result) {
+        console.log('[ItemMeta] Read metadata for:', itemId, 'has imageData:', !!result.imageData, 'has embeddedData:', !!result.embeddedData);
+      }
+      return result;
     } catch (e) {
       console.error('[ItemMeta] Failed to read metadata for:', itemId, e);
       return null;

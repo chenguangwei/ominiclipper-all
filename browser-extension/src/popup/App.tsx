@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ViewState, AppSettings, SavedItem } from '@/types';
+import { ViewState, AppSettings, ResourceItem } from '@/types';
 import { StorageService } from '@/services/storageService';
 import CaptureForm from '@/components/CaptureForm';
 import HistoryView from '@/components/HistoryView';
@@ -9,16 +9,22 @@ import { PlusCircle, List, Settings } from 'lucide-react';
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(ViewState.CAPTURE);
   const [settings, setSettings] = useState<AppSettings>(StorageService.getSettings());
-  const [items, setItems] = useState<SavedItem[]>([]);
+  const [items, setItems] = useState<ResourceItem[]>([]);
 
   useEffect(() => {
     // Load initial data
     setSettings(StorageService.getSettings());
-    setItems(StorageService.getItems());
+    loadItems();
   }, []);
 
+  const loadItems = async () => {
+    // Load items with large data (images) from IndexedDB
+    const itemsWithData = await StorageService.getAllItemsWithLargeData();
+    setItems(itemsWithData);
+  };
+
   const refreshItems = () => {
-    setItems(StorageService.getItems());
+    loadItems();
   };
 
   const handleSettingsClose = () => {
