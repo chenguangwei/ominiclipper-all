@@ -29,6 +29,10 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   const [localStoragePath, setLocalStoragePath] = useState<string | null>(storagePath);
 
+  // Sync Token State
+  const [syncToken, setSyncToken] = useState<string>('');
+  const [tokenCopied, setTokenCopied] = useState(false);
+
   // AI Settings State
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType>('openai');
   const [selectedModel, setSelectedModel] = useState('');
@@ -39,7 +43,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setLocalStoragePath(storagePath);
   }, [storagePath]);
 
-  // Load AI settings on open
+  // Load AI settings and sync token on open
   useEffect(() => {
     if (isOpen) {
       const savedProvider = (localStorage.getItem('OMNICLIPPER_DEFAULT_PROVIDER') as LLMProviderType) || 'openai';
@@ -50,6 +54,16 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
       setApiKey(llmProviderService.getApiKey(savedProvider));
       setCustomApiUrl(localStorage.getItem('OMNICLIPPER_CUSTOM_API_URL') || '');
+
+      // Load sync token
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.getHttpServerToken) {
+        electronAPI.getHttpServerToken().then((token: string) => {
+          setSyncToken(token || '');
+        }).catch(() => {
+          setSyncToken('');
+        });
+      }
     }
   }, [isOpen]);
 
@@ -274,6 +288,38 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div >
             </div >
           </div >
+
+          {/* Browser Extension Sync Token */}
+          {syncToken && (
+            <div className="space-y-3 pt-4 border-t border-[rgb(var(--color-border)/0.1)]">
+              <label className="text-sm font-medium text-content-secondary">{t('settings.sync_token', 'Sync Token')}</label>
+              <div className="p-4 rounded-lg bg-surface-tertiary/50 border border-[rgb(var(--color-border)/0.1)] space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={syncToken}
+                    className="flex-1 bg-surface-secondary border border-[rgb(var(--color-border)/0.2)] rounded-lg px-3 py-2 text-xs text-content font-mono outline-none select-all"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(syncToken);
+                      setTokenCopied(true);
+                      setTimeout(() => setTokenCopied(false), 2000);
+                    }}
+                    className="px-3 py-2 rounded-lg bg-surface-secondary border border-[rgb(var(--color-border)/0.2)] hover:bg-surface-tertiary text-xs font-medium text-content transition-colors flex items-center gap-1"
+                  >
+                    <Icon name={tokenCopied ? 'check' : 'content_copy'} className="text-[14px]" />
+                    {tokenCopied ? t('common.copied', 'Copied') : t('common.copy', 'Copy')}
+                  </button>
+                </div>
+                <p className="text-[10px] text-content-secondary">
+                  {t('settings.sync_token_desc', 'Paste this token in the browser extension settings to enable secure sync.')}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* AI Settings */}
           <div className="space-y-3 pt-4 border-t border-[rgb(var(--color-border)/0.1)]">

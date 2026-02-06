@@ -50,7 +50,12 @@ export const useAppInit = (
             await storageService.initStorage();
 
             // Load data from storage after initialization
-            setItems(storageService.getItemsAsResourceItems());
+            const loadedItems = storageService.getItemsAsResourceItems();
+            console.log('[useAppInit] Loaded items count:', loadedItems.length);
+            if (loadedItems.length > 0) {
+                console.log('[useAppInit] First item ID:', loadedItems[0].id);
+            }
+            setItems(loadedItems);
             setTags(storageService.getTags());
             setFolders(storageService.getFolders());
 

@@ -1,3 +1,25 @@
+-- ============================================
+-- OmniCollector Supabase Database Schema
+-- ============================================
+-- Deployment:
+--   1. Create a Supabase project at https://supabase.com
+--   2. Go to Supabase Dashboard → SQL Editor
+--   3. Paste this entire file and click "Run"
+--   4. Set environment variables in your .env file:
+--      VITE_SUPABASE_URL=https://your-project.supabase.co
+--      VITE_SUPABASE_ANON_KEY=your-anon-key
+--   5. Verify: Check Tables section shows profiles, resources, folders, tags
+--
+-- Tables:
+--   - profiles: User profiles with subscription info (auto-created on signup)
+--   - resources: Stored items/clips with metadata
+--   - folders: User folder hierarchy
+--   - tags: User-defined tags with colors
+--
+-- Security: Row Level Security (RLS) enabled on all tables.
+--           Users can only access their own data.
+-- ============================================
+
 -- 1. 创建用户档案表 (Public Profiles)
 -- 该表通过 Trigger 自动同步 auth.users 的数据
 create table public.profiles (

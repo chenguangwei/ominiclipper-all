@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { StorageService } from '../services/storageService';
 import { SupabaseService } from '../services/supabaseService';
-import { Database, HardDrive, Info, CloudLightning, Check, Loader2, Crown, LogOut, User, Github } from 'lucide-react';
+import { getDesktopToken, setDesktopToken, clearTokenCache, attemptPairing } from '../services/syncClient';
+import { pingDesktop } from '../services/syncClient';
+import { Database, HardDrive, Info, CloudLightning, Check, Loader2, Crown, LogOut, User, Github, Monitor, Link2, RefreshCw } from 'lucide-react';
 
 interface SettingsViewProps {
   initialSettings: AppSettings;
@@ -13,12 +15,32 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialSettings, onClose })
   const [settings, setSettings] = useState<AppSettings>(initialSettings);
   const [saved, setSaved] = useState(false);
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
-  
+
   // Auth Form State
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+
+  // Desktop Sync Token State
+  const [desktopToken, setDesktopTokenState] = useState('');
+  const [desktopConnected, setDesktopConnected] = useState(false);
+  const [isPaired, setIsPaired] = useState(false);
+  const [isPairing, setIsPairing] = useState(false);
+  const [showManualToken, setShowManualToken] = useState(false);
+  const [tokenSaved, setTokenSaved] = useState(false);
+
+  useEffect(() => {
+    // Check desktop connection (ping will auto-pair if needed)
+    pingDesktop().then(async (connected) => {
+      setDesktopConnected(connected);
+      const token = await getDesktopToken();
+      if (token) {
+        setDesktopTokenState(token);
+        setIsPaired(true);
+      }
+    });
+  }, []);
 
   const handleSave = () => {
     StorageService.saveSettings(settings);
@@ -402,6 +424,100 @@ const SettingsView: React.FC<SettingsViewProps> = ({ initialSettings, onClose })
              )}
           </div>
         )}
+
+        {/* Desktop Connection */}
+        <div className="space-y-3">
+          <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <Monitor className="w-4 h-4" />
+            Desktop Connection
+          </label>
+          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-600">Status</span>
+              <span className={`flex items-center text-xs font-medium ${
+                desktopConnected && isPaired ? 'text-emerald-600' : desktopConnected ? 'text-amber-600' : 'text-gray-400'
+              }`}>
+                <span className={`w-2 h-2 rounded-full mr-1.5 ${
+                  desktopConnected && isPaired ? 'bg-emerald-500' : desktopConnected ? 'bg-amber-500' : 'bg-gray-300'
+                }`}></span>
+                {desktopConnected && isPaired ? 'Connected & Paired' : desktopConnected ? 'Connected (not paired)' : 'Disconnected'}
+              </span>
+            </div>
+
+            {/* Auto-pair / Re-pair button */}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setIsPairing(true);
+                  const connected = await pingDesktop();
+                  setDesktopConnected(connected);
+                  if (connected) {
+                    clearTokenCache();
+                    const paired = await attemptPairing();
+                    setIsPaired(paired);
+                    if (paired) {
+                      const token = await getDesktopToken();
+                      if (token) setDesktopTokenState(token);
+                    }
+                  }
+                  setIsPairing(false);
+                }}
+                disabled={isPairing}
+                className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-colors bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-50"
+              >
+                {isPairing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                {isPairing ? 'Pairing...' : isPaired ? 'Re-pair' : 'Auto Pair'}
+              </button>
+            </div>
+
+            {/* Manual token fallback */}
+            <div>
+              <button
+                onClick={() => setShowManualToken(!showManualToken)}
+                className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                {showManualToken ? 'Hide manual token' : 'Enter token manually'}
+              </button>
+              {showManualToken && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={desktopToken}
+                      onChange={(e) => setDesktopTokenState(e.target.value)}
+                      placeholder="Paste token from desktop Settings"
+                      className="flex-1 p-2 rounded border border-gray-300 text-xs font-mono"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (desktopToken.trim()) {
+                          clearTokenCache();
+                          await setDesktopToken(desktopToken.trim());
+                          setIsPaired(true);
+                          setTokenSaved(true);
+                          const connected = await pingDesktop();
+                          setDesktopConnected(connected);
+                          setTimeout(() => setTokenSaved(false), 2000);
+                        }
+                      }}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${
+                        tokenSaved
+                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                          : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                      }`}
+                    >
+                      {tokenSaved ? <Check className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+                      {tokenSaved ? 'Saved' : 'Save'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    Find the sync token in OmniCollector Desktop &gt; Settings &gt; Sync Token
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
       </div>
 

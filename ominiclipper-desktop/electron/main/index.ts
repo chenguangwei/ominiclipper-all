@@ -1018,7 +1018,7 @@ function registerIPCHandlers() {
   });
 
   // ============================================
-  // MTime Tracking System (Eagle-style mtime.json)
+  // MTime Tracking System (Eagle-style mtime.json)。
   // ============================================
 
   function getMTimeFilePath() {
@@ -1602,6 +1602,14 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Cleanup
   httpServer.stopServer();
+});
+
+// ============================================
+// HTTP Server API
+// ============================================
+
+ipcMain.handle('httpServer:getToken', () => {
+  return httpServer.getAuthToken();
 });
 
 // ============================================

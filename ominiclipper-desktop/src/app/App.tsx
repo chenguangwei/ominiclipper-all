@@ -89,8 +89,8 @@ const App: React.FC = () => {
 
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // 3. Sync
-  const { isSyncing, syncItems, user } = useSync(items, setItems);
+  // 3. Sync (wait for storage to be ready to avoid race condition)
+  const { isSyncing, syncItems, user } = useSync(items, setItems, isStorageReady);
 
   // 4. Filtering & Sorting
   const filteredItems = useFiltering(

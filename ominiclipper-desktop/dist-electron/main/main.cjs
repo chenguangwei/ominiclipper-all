@@ -1265,6 +1265,9 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   httpServer.stopServer();
 });
+ipcMain.handle("httpServer:getToken", () => {
+  return httpServer.getAuthToken();
+});
 ipcMain.handle("vector:initialize", async () => {
   const userDataPath = app.getPath("userData");
   return await vectorService.initialize(userDataPath);

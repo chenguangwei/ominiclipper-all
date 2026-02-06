@@ -6,17 +6,67 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = 3456;
 const PORT_FILE = '.omnicollector_port';
 
 let server = null;
+let authToken = null;
 
 // Track main window for IPC
 let mainWindowRef = null;
 
 function setMainWindow(win) {
   mainWindowRef = win;
+}
+
+/**
+ * Generate a random auth token for API access
+ */
+function generateAuthToken() {
+  authToken = crypto.randomBytes(32).toString('hex');
+  console.log('[HTTP Server] Auth token generated');
+  return authToken;
+}
+
+/**
+ * Get current auth token
+ */
+function getAuthToken() {
+  return authToken;
+}
+
+/**
+ * Validate Authorization header
+ */
+function validateAuth(req) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+  return authHeader.slice(7) === authToken;
+}
+
+/**
+ * Get CORS headers based on request origin
+ */
+function getCorsHeaders(req) {
+  const origin = (req && req.headers && req.headers.origin) || '';
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+  ];
+  const isAllowed = allowedOrigins.includes(origin) || origin.startsWith('chrome-extension://');
+
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin'
+  };
 }
 
 /**
@@ -34,13 +84,14 @@ function getPortFilePath() {
 }
 
 /**
- * Write port to file for browser extension discovery
+ * Write port and token to file for browser extension discovery
  */
 function writePortFile() {
   try {
     const portFilePath = getPortFilePath();
-    fs.writeFileSync(portFilePath, String(PORT), 'utf8');
-    console.log('[HTTP Server] Port written to:', portFilePath);
+    const data = JSON.stringify({ port: PORT, token: authToken });
+    fs.writeFileSync(portFilePath, data, 'utf8');
+    console.log('[HTTP Server] Port and token written to:', portFilePath);
   } catch (error) {
     console.error('[HTTP Server] Failed to write port file:', error);
   }
@@ -167,12 +218,11 @@ function parseRequestBody(req) {
 /**
  * Send JSON response
  */
-function sendJson(res, statusCode, data) {
+function sendJson(res, statusCode, data, req) {
+  const corsHeaders = getCorsHeaders(req);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    ...corsHeaders
   });
   res.end(JSON.stringify(data));
 }
@@ -188,19 +238,34 @@ async function handleRequest(req, res) {
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
+    const corsHeaders = getCorsHeaders(req);
+    res.writeHead(204, corsHeaders);
     res.end();
     return;
   }
 
   try {
-    // GET /api/ping - Health check
+    // GET /api/ping - Health check (no auth required)
     if (pathname === '/api/ping' && req.method === 'GET') {
-      sendJson(res, 200, { status: 'ok', server: 'omnicollector-desktop' });
+      sendJson(res, 200, { status: 'ok', server: 'omnicollector-desktop' }, req);
+      return;
+    }
+
+    // POST /api/pair - Auto-pairing for browser extension (no auth, origin-restricted)
+    if (pathname === '/api/pair' && req.method === 'POST') {
+      const origin = (req.headers.origin || '');
+      if (!origin.startsWith('chrome-extension://')) {
+        sendJson(res, 403, { error: 'Forbidden: only browser extensions can pair' }, req);
+        return;
+      }
+      console.log('[HTTP Server] Extension paired from origin:', origin);
+      sendJson(res, 200, { token: authToken }, req);
+      return;
+    }
+
+    // Auth required for all other endpoints
+    if (!validateAuth(req)) {
+      sendJson(res, 401, { error: 'Unauthorized' }, req);
       return;
     }
 
@@ -209,7 +274,7 @@ async function handleRequest(req, res) {
       const body = await parseRequestBody(req);
 
       if (!body || !body.items) {
-        sendJson(res, 400, { error: 'Missing items array' });
+        sendJson(res, 400, { error: 'Missing items array' }, req);
         return;
       }
 
@@ -231,7 +296,7 @@ async function handleRequest(req, res) {
         synced: synced,
         skipped: skipped,
         total: body.items.length
-      });
+      }, req);
       return;
     }
 
@@ -240,7 +305,7 @@ async function handleRequest(req, res) {
       const body = await parseRequestBody(req);
 
       if (!body || !body.id) {
-        sendJson(res, 400, { error: 'Missing item data' });
+        sendJson(res, 400, { error: 'Missing item data' }, req);
         return;
       }
 
@@ -248,19 +313,19 @@ async function handleRequest(req, res) {
       const result = sendToRenderer(desktopItem);
 
       if (result.success) {
-        sendJson(res, 200, { success: true, action: 'synced' });
+        sendJson(res, 200, { success: true, action: 'synced' }, req);
       } else {
-        sendJson(res, 500, { success: false, error: result.error });
+        sendJson(res, 500, { success: false, error: result.error }, req);
       }
       return;
     }
 
     // 404 for other routes
-    sendJson(res, 404, { error: 'Not found' });
+    sendJson(res, 404, { error: 'Not found' }, req);
 
   } catch (error) {
     console.error('[HTTP Server] Request error:', error);
-    sendJson(res, 500, { error: error.message });
+    sendJson(res, 500, { error: error.message }, req);
   }
 }
 
@@ -272,6 +337,9 @@ function startServer() {
     console.log('[HTTP Server] Server already running');
     return;
   }
+
+  // Generate auth token before starting
+  generateAuthToken();
 
   server = http.createServer(handleRequest);
 
@@ -296,6 +364,7 @@ function stopServer() {
     server.close(() => {
       console.log('[HTTP Server] Server stopped');
       server = null;
+      authToken = null;
       deletePortFile();
     });
   } else {
@@ -315,5 +384,6 @@ module.exports = {
   stopServer,
   isRunning,
   setMainWindow,
+  getAuthToken,
   PORT
 };

@@ -58,6 +58,9 @@ try {
     // Browser extension sync
     syncFromBrowserExtension: (item) => ipcRenderer.invoke('sync:browserExtension', item),
 
+    // HTTP Server
+    getHttpServerToken: () => ipcRenderer.invoke('httpServer:getToken'),
+
     // ============================================
     // JSON File Storage API
     // ============================================

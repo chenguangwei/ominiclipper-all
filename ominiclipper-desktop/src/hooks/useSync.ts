@@ -5,33 +5,49 @@ import { getClient } from '@/supabaseClient';
 
 export const useSync = (
     items: ResourceItem[],
-    setItems: (items: ResourceItem[]) => void
+    setItems: (items: ResourceItem[]) => void,
+    isStorageReady: boolean = true  // Add flag to wait for storage initialization
 ) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [user, setUser] = useState<any>(null);
 
-    // Check existing session
+    // Check existing session - only after storage is ready
     useEffect(() => {
+        console.log('[useSync] useEffect triggered, isStorageReady:', isStorageReady);
+        if (!isStorageReady) {
+            console.log('[useSync] Waiting for storage to be ready...');
+            return;
+        }
+
+        console.log('[useSync] Storage is ready, checking auth...');
         const client = getClient();
         if (client) {
             client.auth.getUser().then(({ data }) => {
+                console.log('[useSync] Auth check complete, user:', data.user ? 'logged in' : 'not logged in');
                 if (data.user) {
                     setUser(data.user);
                     // Auto sync on load if user exists
                     syncItems();
                 }
             });
+        } else {
+            console.log('[useSync] No Supabase client, skipping sync');
         }
-    }, []);
+    }, [isStorageReady]);
 
     // Sync items with Supabase
     const syncItems = async () => {
+        console.log('[useSync] syncItems called');
         const client = getClient();
-        if (!client) return;
+        if (!client) {
+            console.log('[useSync] No client, aborting sync');
+            return;
+        }
 
         setIsSyncing(true);
         try {
             const { data, error } = await client.from('resources').select('*');
+            console.log('[useSync] Supabase query result - data:', data?.length || 0, 'error:', error ? error.message : 'none');
             if (error) {
                 console.error('Sync error:', error);
             } else if (data && data.length > 0) {

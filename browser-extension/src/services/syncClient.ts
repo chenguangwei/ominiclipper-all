@@ -24,6 +24,50 @@ let isDesktopConnected = false;
 let lastConnectionCheck = 0;
 let connectionCheckTimer: ReturnType<typeof setInterval> | null = null;
 
+// Auth token for desktop API
+let cachedToken: string | null = null;
+
+/**
+ * Get the desktop sync token from storage
+ */
+export async function getDesktopToken(): Promise<string | null> {
+  if (cachedToken) return cachedToken;
+  try {
+    const result = await chrome.storage.local.get('OMNICLIPPER_DESKTOP_TOKEN');
+    cachedToken = result.OMNICLIPPER_DESKTOP_TOKEN || null;
+  } catch {
+    cachedToken = null;
+  }
+  return cachedToken;
+}
+
+/**
+ * Save the desktop sync token to storage
+ */
+export async function setDesktopToken(token: string): Promise<void> {
+  cachedToken = token;
+  await chrome.storage.local.set({ OMNICLIPPER_DESKTOP_TOKEN: token });
+}
+
+/**
+ * Clear the cached token (e.g. on disconnect)
+ */
+export function clearTokenCache(): void {
+  cachedToken = null;
+}
+
+/**
+ * Get headers with authorization token for authenticated endpoints
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getDesktopToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 // Event listeners for connection status changes
 type ConnectionListener = (connected: boolean) => void;
 const connectionListeners: ConnectionListener[] = [];
@@ -84,6 +128,43 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Attempt to auto-pair with desktop app to obtain auth token
+ * Calls /api/pair which is CORS-restricted to chrome-extension:// origins
+ */
+export async function attemptPairing(): Promise<boolean> {
+  try {
+    const url = await getDesktopUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(`${url}/api/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.log('[SyncClient] Pairing failed:', response.status);
+      return false;
+    }
+
+    const data = await response.json();
+    if (data.token) {
+      clearTokenCache();
+      await setDesktopToken(data.token);
+      console.log('[SyncClient] Auto-paired with desktop');
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.log('[SyncClient] Pairing error:', error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+
+/**
  * Check if desktop app is running
  */
 export async function pingDesktop(): Promise<boolean> {
@@ -101,6 +182,14 @@ export async function pingDesktop(): Promise<boolean> {
     clearTimeout(timeoutId);
     const data = await response.json();
     const connected = data.status === 'ok';
+
+    // Auto-pair if connected but no token stored
+    if (connected) {
+      const existingToken = await getDesktopToken();
+      if (!existingToken) {
+        await attemptPairing();
+      }
+    }
 
     notifyConnectionChange(connected);
     lastConnectionCheck = Date.now();
@@ -175,9 +264,10 @@ export async function syncItemToDesktop(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
+      const headers = await getAuthHeaders();
       const response = await fetch(`${url}/api/sync-one`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(item),
         signal: controller.signal
       });
@@ -203,6 +293,16 @@ export async function syncItemToDesktop(
 
       if (!silent) {
         console.warn(`[SyncClient] Sync attempt ${attempt + 1}/${maxRetries + 1} failed:`, errorMessage);
+      }
+
+      // On 401: token expired or desktop restarted. Try re-pairing.
+      if (errorMessage.includes('401')) {
+        clearTokenCache();
+        const paired = await attemptPairing();
+        if (paired && !isLastAttempt) {
+          if (!silent) console.log('[SyncClient] Re-paired, retrying...');
+          continue; // Retry immediately with new token
+        }
       }
 
       // Check if it's a connection error
@@ -248,9 +348,10 @@ export async function syncItemsToDesktop(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for batch
 
+      const headers = await getAuthHeaders();
       const response = await fetch(`${url}/api/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ items }),
         signal: controller.signal
       });
@@ -277,6 +378,16 @@ export async function syncItemsToDesktop(
       const isLastAttempt = attempt === maxRetries;
 
       console.warn(`[SyncClient] Batch sync attempt ${attempt + 1}/${maxRetries + 1} failed:`, errorMessage);
+
+      // On 401: token expired or desktop restarted. Try re-pairing.
+      if (errorMessage.includes('401')) {
+        clearTokenCache();
+        const paired = await attemptPairing();
+        if (paired && !isLastAttempt) {
+          console.log('[SyncClient] Re-paired, retrying batch...');
+          continue;
+        }
+      }
 
       if (isLastAttempt) {
         // Fallback: try syncing items one by one
@@ -338,9 +449,10 @@ export async function getDesktopStats(): Promise<{ totalItems: number; browserEx
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
+    const headers = await getAuthHeaders();
     const response = await fetch(`${url}/api/stats`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: controller.signal
     });
 
@@ -467,6 +579,12 @@ export const SyncClient = {
   onConnectionChange,
   startConnectionMonitor,
   stopConnectionMonitor,
+
+  // Auth & Pairing
+  getDesktopToken,
+  setDesktopToken,
+  clearTokenCache,
+  attemptPairing,
 
   // Sync operations
   syncItemToDesktop,

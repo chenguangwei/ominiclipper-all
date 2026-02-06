@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ResourceItem } from '../types';
+import { ResourceItem, ResourceType } from '../types';
 import { getFileData } from '../utils/fileHelpers';
+
+// Types that don't need file content loading (their renderers only use item metadata)
+const SKIP_CONTENT_TYPES: Set<string> = new Set([
+  ResourceType.WEB,
+  ResourceType.EPUB,
+  ResourceType.PPT,
+  ResourceType.EXCEL,
+]);
 
 export const useFileContent = (item: ResourceItem | null, activeTab: 'details' | 'preview') => {
   const [content, setContent] = useState<ArrayBuffer | null>(null);
@@ -42,6 +50,14 @@ export const useFileContent = (item: ResourceItem | null, activeTab: 'details' |
 
   useEffect(() => {
     if (activeTab !== 'preview' || !item) {
+      return;
+    }
+    // Skip content loading for types whose renderers don't use file content
+    if (SKIP_CONTENT_TYPES.has(item.type)) {
+      setContent(null);
+      setContentItemId(item.id);
+      setLoading(false);
+      setError(null);
       return;
     }
     loadContent(item);
